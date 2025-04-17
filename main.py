@@ -11,7 +11,7 @@ import replicate
 import pandas as pd
 from docx.shared import Inches
 
-st.set_page_config(page_title="NarrativaX", page_icon="/public/icon-192.png", layout="wide")
+st.set_page_config(page_title="NarrativaX", page_icon="🪶", layout="wide")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 replicate_client = replicate.Client(api_token=REPLICATE_API_TOKEN)
@@ -37,7 +37,7 @@ IMAGE_MODELS = {
     "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:latest",
     "Reliberate V3 (NSFW)": "asiryan/reliberate-v3:latest"
 }
-
+SAFE_IMAGE_MODELS = {k: v for k, v in IMAGE_MODELS.items() if "NSFW" not in k}
 
 def init_state():
     defaults = {
@@ -50,6 +50,9 @@ def init_state():
         if k not in st.session_state:
             st.session_state[k] = v
 init_state()
+
+def is_adult_mode():
+    return st.session_state.genre in GENRES_ADULT or st.session_state.tone in TONE_MAP and "NSFW" in TONE_MAP[st.session_state.tone]
 
 def call_openrouter(prompt, model, max_tokens=1800):
     headers = {
@@ -101,11 +104,11 @@ def narrate(text, id_key):
     st.session_state.audio_cache[id_key] = filename
     return filename
 
-# --- SIDEBAR ---
 with st.sidebar:
-    st.image("/public/icon-192.png", width=180)
+    st.image("https://narrativax.onrender.com/icon-192.png", width=180)
     st.markdown("### NarrativaX PWA")
     st.info("Safari → Dela → Lägg till på hemskärmen för att spara som app.")
+
     if st.button("Save Project"):
         json.dump(st.session_state.book, open("session.json", "w"))
         st.success("Project saved.")
