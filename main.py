@@ -95,10 +95,10 @@ def generate_section(title, outline, model):
     return call_openrouter(f"Write the full content for section '{title}' using this outline:\\n{outline}", model)
 
 def generate_characters(outline, genre, tone, model):
-    prompt = f\"\"\"Create characters for a {tone} {genre} novel based on this outline.
+    prompt = f"""Create characters for a {tone} {genre} novel based on this outline.
 Return a JSON list like:
 [{{"name": "X", "role": "Y", "personality": "...", "appearance": "..."}}]
-Outline: {outline}\"\"\"
+Outline: {outline}"""
     try:
         return json.loads(call_openrouter(prompt, model))
     except:
