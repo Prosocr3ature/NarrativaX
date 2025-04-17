@@ -1,56 +1,51 @@
-from flask import Flask, request, jsonify
 import os
+import json
+from flask import Flask, request, jsonify
 import replicate
 from gtts import gTTS
 from io import BytesIO
-import json
+from PIL import Image
 
+# Create the Flask app
 app = Flask(__name__)
 
-# Setup Replicate API client
+# Replicate API key (Set in environment variables)
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 replicate_client = replicate.Client(api_token=REPLICATE_API_TOKEN)
 
-# Route to generate text using a specified model
+# Initialize endpoints
 @app.route("/generate", methods=["POST"])
 def generate_text():
     data = request.get_json()
-    prompt = data.get("prompt", "")
-    model_name = data.get("model", "nothingiisreal/mn-celeste-12b")
+    prompt = data.get("prompt")
+    
+    # Call OpenRouter or similar model for text generation (mockup)
+    output = "Generated text based on: " + prompt  # Replace this with real API call
 
-    try:
-        # Send prompt to OpenRouter or other model API (replace this as needed)
-        response = replicate_client.run(model_name, input={"prompt": prompt})
-        return jsonify({"generated_text": response[0]})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify({"generated_text": output})
 
-# Route to generate images based on prompt
 @app.route("/generate_image", methods=["POST"])
 def generate_image():
     data = request.get_json()
-    prompt = data.get("prompt", "")
+    prompt = data.get("prompt")
+    
+    # Example image generation using Replicate
+    output = replicate_client.run("lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb", input={"prompt": prompt})
+    
+    return jsonify({"image_url": output[0]})
 
-    try:
-        image_url = replicate_client.run("lucataco/realistic-vision-v5.1:latest", input={"prompt": prompt})
-        return jsonify({"image_url": image_url[0]})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# Route to generate audio using gTTS (Google Text-to-Speech)
-@app.route("/generate_audio", methods=["POST"])
-def generate_audio():
+@app.route("/narrate", methods=["POST"])
+def narrate():
     data = request.get_json()
-    text = data.get("text", "")
+    text = data.get("text")
+    
+    tts = gTTS(text)
+    audio_stream = BytesIO()
+    tts.save(audio_stream)
+    audio_stream.seek(0)
 
-    try:
-        tts = gTTS(text)
-        audio_fp = BytesIO()
-        tts.save(audio_fp)
-        audio_fp.seek(0)
-        return jsonify({"audio_url": audio_fp.getvalue()})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify({"audio": audio_stream.getvalue().decode("latin1")})  # Encode in base64 or similar
 
+# Run the app
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, host='0.0.0.0')
