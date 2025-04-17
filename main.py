@@ -136,10 +136,12 @@ def narrate(text, id_key):
     return filename
 
 # --- SIDEBAR ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.image("https://narrativax.onrender.com/icon-192.png", width=180)
-    st.markdown("### NarrativaX PWA")
-    st.info("Safari → Dela → Lägg till på hemskärmen för att spara som app.")
+    try:
+        st.image("https://raw.githubusercontent.com/Prosocr3ature/NarrativaX/main/public/logo.png", width=180)
+    except:
+        st.image("https://narrativax.onrender.com/icon-512.png", width=180)
 
     if st.button("Save Project"):
         json.dump(st.session_state.book, open("session.json", "w"))
