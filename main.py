@@ -256,90 +256,72 @@ if st.session_state.book:
                     st.session_state.book[title] = new_text
                     st.success(f"{title} regenerated.")
 
-    # --- CHARACTERS TAB ---
-    with tabs[-1]:
-        st.subheader("Character Gallery")
+# --- CHARACTERS TAB ---
+with tabs[-1]:
+    st.subheader("Characters & Portraits")
 
-        if st.button("➕ Add New Character"):
-            st.session_state.characters.append({
-                "name": "New Character",
-                "role": "Unknown",
-                "personality": "",
-                "appearance": "",
-                "type": "Supporting",
-                "relations": ""
+    if st.button("➕ Add New Character"):
+        st.session_state.characters.append({
+            "name": "New",
+            "role": "Unknown",
+            "personality": "",
+            "appearance": "",
+            "type": "Supporting",
+            "relations": ""
+        })
+
+    st.markdown("### Character Editor")
+    updated = []
+    for idx, char in enumerate(st.session_state.characters):
+        with st.expander(f"{char['name']} — {char['role']}", expanded=False):
+            col1, col2 = st.columns([2, 1])
+
+            with col1:
+                name = st.text_input("Name", char.get("name", ""), key=f"name_{idx}")
+                role = st.text_input("Role", char.get("role", ""), key=f"role_{idx}")
+                personality = st.text_area("Personality", char.get("personality", ""), key=f"pers_{idx}")
+                appearance = st.text_area("Appearance", char.get("appearance", ""), key=f"app_{idx}")
+            with col2:
+                portrait_key = f"char_{idx}"
+                portrait_url = st.session_state.image_cache.get(portrait_key)
+                if portrait_url:
+                    st.image(portrait_url, caption=char['name'], use_container_width=True)
+                if st.button("Regenerate Portrait", key=f"regenportrait_{idx}"):
+                    url = generate_image(appearance, st.session_state.img_model, portrait_key)
+                    st.session_state.image_cache[portrait_key] = url
+                    st.success("Portrait updated!")
+                if st.button("❌ Remove", key=f"remove_char_{idx}"):
+                    continue  # skip adding to updated list
+            updated.append({
+                "name": name,
+                "role": role,
+                "personality": personality,
+                "appearance": appearance,
+                "type": char.get("type", "Supporting"),
+                "relations": char.get("relations", "")
             })
 
-        search = st.text_input("Search characters...", "").lower()
-        role_filter = st.selectbox("Filter by Type", ["All"] + list(set(c.get("type", "") for c in st.session_state.characters)))
+    st.session_state.characters = updated
 
-        filtered = [
-            c for c in st.session_state.characters
-            if (search in c['name'].lower() or search in c['role'].lower())
-            and (role_filter == "All" or c.get("type") == role_filter)
-        ]
+    st.markdown("### Export Characters")
+    col1, col2 = st.columns(2)
 
-        edited = st.data_editor(filtered, num_rows="dynamic", use_container_width=True, key="char_editor")
-        st.session_state.characters = edited
+    with col1:
+        st.download_button("Download JSON", json.dumps(st.session_state.characters), file_name="characters.json")
 
-        st.markdown("### Portrait Gallery")
-        portrait_cols = st.columns(3)
-        images = []
-        for idx, char in enumerate(edited):
-            with portrait_cols[idx % 3]:
-                st.markdown(f"**{char['name']}** — *{char['role']}*")
-                prompt = st.text_input("Portrait prompt", char.get("appearance", ""), key=f"imgprompt_{idx}")
-                portrait_key = f"char_{idx}"
-                img_url = st.session_state.image_cache.get(portrait_key)
-
-                if img_url:
-                    st.image(img_url, caption=char['name'], use_container_width=True)
-
-                if st.button("Regenerate Portrait", key=f"regenportrait_{idx}"):
-                    url = generate_image(prompt, st.session_state.img_model, portrait_key)
-                    st.session_state.image_cache[portrait_key] = url
-                    st.image(url, caption=char['name'], use_container_width=True)
-                    st.success("Portrait updated!")
-
-                images.append((char['name'], st.session_state.image_cache.get(portrait_key)))
-
-        # Export
-        st.markdown("### Export Characters")
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.download_button("Download JSON", json.dumps(st.session_state.characters), file_name="characters.json")
-
-        with col2:
-            try:
-                df = pd.DataFrame(st.session_state.characters)
-                fig, ax = plt.subplots(figsize=(10, len(df)*0.5))
-                ax.axis('off')
-                tbl = ax.table(cellText=df.values, colLabels=df.columns, loc='center')
-                buf = BytesIO()
-                plt.savefig(buf, format='png', bbox_inches='tight')
-                buf.seek(0)
-                st.download_button("Export Table PNG", data=buf, file_name="characters_table.png", mime="image/png")
-            except Exception as e:
-                st.warning("Failed to export character table.")
-
-        with col3:
-            if st.button("Download Portrait Collage (PNG)"):
-                if images:
-                    cols = 3
-                    size = (256, 256)
-                    imgs = [Image.open(BytesIO(requests.get(url).content)).resize(size) for _, url in images if url]
-                    rows = (len(imgs) + cols - 1) // cols
-                    collage = Image.new("RGB", (size[0]*cols, size[1]*rows))
-                    for idx, img in enumerate(imgs):
-                        x, y = (idx % cols) * size[0], (idx // cols) * size[1]
-                        collage.paste(img, (x, y))
-                    out = BytesIO()
-                    collage.save(out, format="PNG")
-                    out.seek(0)
-                    st.download_button("Download Collage", data=out, file_name="character_collage.png", mime="image/png")
-                else:
-                    st.info("No portraits yet.")
+    with col2:
+        try:
+            df = pd.DataFrame(st.session_state.characters)
+            buf = BytesIO()
+            fig, ax = plt.subplots(figsize=(10, len(df)*0.5))
+            ax.axis('off')
+            tbl = ax.table(cellText=df.values, colLabels=df.columns, loc='center')
+            plt.savefig(buf, format='png', bbox_inches='tight')
+            buf.seek(0)
+            st.download_button("Download Table as PNG", buf, file_name="character_table.png", mime="image/png")
+        except:
+            st.warning("Failed to export PNG.")
+    
 # --- FOOTER ---
 st.markdown("---")
 st.caption("© 2025 NarrativaX | Built with AI and imagination.")
