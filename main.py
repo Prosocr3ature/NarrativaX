@@ -11,7 +11,7 @@ import replicate
 import pandas as pd
 from docx.shared import Inches
 
-st.set_page_config(page_title="NarrativaX", page_icon="🪶", layout="wide")
+st.set_page_config(page_title="NarrativaX", page_icon="/public/icon-192.png", layout="wide")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 replicate_client = replicate.Client(api_token=REPLICATE_API_TOKEN)
@@ -37,13 +37,12 @@ IMAGE_MODELS = {
     "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:latest",
     "Reliberate V3 (NSFW)": "asiryan/reliberate-v3:latest"
 }
-SAFE_IMAGE_MODELS = {k: v for k, v in IMAGE_MODELS.items() if "NSFW" not in k}
+
 
 def init_state():
     defaults = {
         "book": {}, "outline": "", "characters": [], "prompt": "",
-        "genre": "", "tone": "", "adult_confirmed": False,
-        "chapter_order": [], "image_cache": {}, "audio_cache": {},
+        "genre": "", "tone": "", "chapter_order": [], "image_cache": {}, "audio_cache": {},
         "img_model": "", "book_title": "", "custom_title": "", "tagline": "",
         "cover_image": None, "regenerate_mode": "Preview", "want_to_generate": False
     }
@@ -51,17 +50,6 @@ def init_state():
         if k not in st.session_state:
             st.session_state[k] = v
 init_state()
-
-def is_adult_mode():
-    return st.session_state.genre in GENRES_ADULT or st.session_state.tone in TONE_MAP and "NSFW" in TONE_MAP[st.session_state.tone]
-
-def require_adult_confirmation():
-    with st.expander("⚠️ Adult Mode Consent Required", expanded=True):
-        st.error("This content may contain mature or explicit themes. Viewer discretion is advised.")
-        st.markdown("By continuing, you confirm you're **18 years or older** and agree to view uncensored content.")
-        if st.button("I am 18+ and I understand"):
-            st.session_state.adult_confirmed = True
-            st.experimental_rerun()
 
 def call_openrouter(prompt, model, max_tokens=1800):
     headers = {
@@ -97,8 +85,6 @@ Outline: {outline}"""
         return [{"name": "Unnamed", "role": "Unknown", "personality": "N/A", "appearance": ""}]
 
 def generate_image(prompt, model_key, id_key):
-    if is_adult_mode() and not st.session_state.adult_confirmed:
-        require_adult_confirmation()
     if id_key in st.session_state.image_cache:
         return st.session_state.image_cache[id_key]
     model = IMAGE_MODELS[model_key]
@@ -117,7 +103,7 @@ def narrate(text, id_key):
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.image("https://raw.githubusercontent.com/[user]/[repo]/main/narrativax-api/public/logo.png", width=180)
+    st.image("/public/icon-192.png", width=180)
     st.markdown("### NarrativaX PWA")
     st.info("Safari → Dela → Lägg till på hemskärmen för att spara som app.")
     if st.button("Save Project"):
@@ -142,6 +128,21 @@ if cover_url and isinstance(cover_url, str) and cover_url.startswith("http"):
         st.warning("Could not display cover image.")
 else:
     st.info("No valid cover image available.")
+
+# --- SETTINGS ---
+with st.expander("Book Settings", expanded=True):
+    st.session_state.prompt = st.text_area("Book Idea / Prompt", height=150)
+    genre_type = st.radio("Content Type", ["Normal", "Adult"], horizontal=True)
+    genre_list = GENRES_ADULT if genre_type == "Adult" else GENRES_NORMAL
+    st.session_state.genre = st.selectbox("Genre", genre_list)
+    st.session_state.tone = st.selectbox("Tone", list(TONE_MAP))
+    chapters = st.slider("Chapters", 4, 20, 10)
+    model = st.selectbox("Model", MODELS)
+    voice = st.selectbox("Voice", list(VOICES))
+    st.session_state.img_model = st.selectbox("Image Model", list(IMAGE_MODELS))
+    st.session_state.custom_title = st.text_input("Custom Title (optional)", "")
+    st.session_state.tagline = st.text_input("Tagline (optional)", "")
+    st.session_state.regenerate_mode = st.radio("Regenerate Mode", ["Preview", "Instant"], horizontal=True)
 
 # --- SETTINGS ---
 with st.expander("Book Settings", expanded=True):
