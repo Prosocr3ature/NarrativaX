@@ -136,7 +136,6 @@ def narrate(text, id_key):
     return filename
 
 # --- SIDEBAR ---
-# --- SIDEBAR ---
 with st.sidebar:
     try:
         st.image("https://raw.githubusercontent.com/Prosocr3ature/NarrativaX/main/public/logo.png", width=180)
