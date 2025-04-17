@@ -260,6 +260,30 @@ if st.session_state.book:
 with tabs[-1]:
     st.subheader("Characters & Portraits")
 
+    # Nytt: Generera karaktärer
+    col1, col2 = st.columns(2)
+    if col1.button("🔄 Generate Characters From Outline"):
+        st.session_state.characters = generate_characters(
+            st.session_state.outline,
+            st.session_state.genre,
+            TONE_MAP[st.session_state.tone],
+            model
+        )
+        st.success("Characters regenerated from outline!")
+
+    if col2.button("➕ Add One More Character Based on Story"):
+        try:
+            new_char = generate_characters(
+                st.session_state.outline,
+                st.session_state.genre,
+                TONE_MAP[st.session_state.tone],
+                model
+            )[0]
+            st.session_state.characters.append(new_char)
+            st.success(f"Added new character: {new_char['name']}")
+        except:
+            st.warning("Could not generate character.")
+
     if st.button("➕ Add New Character"):
         st.session_state.characters.append({
             "name": "New",
@@ -291,7 +315,7 @@ with tabs[-1]:
                     st.session_state.image_cache[portrait_key] = url
                     st.success("Portrait updated!")
                 if st.button("❌ Remove", key=f"remove_char_{idx}"):
-                    continue  # skip adding to updated list
+                    continue
             updated.append({
                 "name": name,
                 "role": role,
@@ -321,7 +345,7 @@ with tabs[-1]:
             st.download_button("Download Table as PNG", buf, file_name="character_table.png", mime="image/png")
         except:
             st.warning("Failed to export PNG.")
-    
+                    
 # --- FOOTER ---
 st.markdown("---")
 st.caption("© 2025 NarrativaX | Built with AI and imagination.")
