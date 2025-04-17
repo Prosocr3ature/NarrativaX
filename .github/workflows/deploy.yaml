@@ -3,29 +3,27 @@ name: Deploy to Production
 on:
   push:
     branches:
-      - main  # Eller den branch du vill använda för att bygga och deploya appen
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2  # Hämtar koden från GitHub
+        uses: actions/checkout@v2
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '16'  # Du kan justera Node.js versionen om du vill
+          node-version: '16'
 
       - name: Install dependencies
         run: |
-          cd NarrativaX  # Navigera till mappen där package.json finns
-          npm install
+          npm install  # Kör direkt här om package.json finns i rotmappen
 
       - name: Build the app
         run: |
-          cd NarrativaX  # Navigera till mappen där package.json finns
-          npm run build
+          npm run build  # Kör build om package.json finns i rotmappen
 
       - name: Deploy to Production
         run: |
