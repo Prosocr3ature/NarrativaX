@@ -108,6 +108,7 @@ Outline: {outline}"""
 def generate_image(prompt, model_key, id_key):
     if id_key in st.session_state.image_cache:
         return st.session_state.image_cache[id_key]
+    
     model = IMAGE_MODELS[model_key]
     args = {
         "prompt": prompt[:300],
@@ -116,17 +117,19 @@ def generate_image(prompt, model_key, id_key):
         "width": 768,
         "height": 1024
     }
+    
     output = replicate_client.run(model, input=args)
-    if isinstance(output, str) and output.startswith("http"):
-        image_result = output
-    elif hasattr(output, "read"):
-        image_data = output.read()
-        image_result = Image.open(BytesIO(image_data))
+
+    # FIX: om output är lista med URL
+    if isinstance(output, list) and isinstance(output[0], str) and output[0].startswith("http"):
+        image_result = output[0]
     else:
-        st.error("Image generation failed: unknown output type.")
+        st.error("Image generation failed: unknown or unsupported output format.")
         return None
+
     st.session_state.image_cache[id_key] = image_result
     return image_result
+
 
 def narrate(text, id_key):
     if id_key in st.session_state.audio_cache:
