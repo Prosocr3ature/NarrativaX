@@ -226,96 +226,95 @@ if st.session_state.book:
             st.subheader(title)
             st.markdown(st.session_state.book[title])
 
+    # --- CHARACTERS TAB ---
+    with tabs[-1]:
+        st.subheader("Characters & Portraits")
 
-# --- CHARACTERS TAB ---
-with tabs[-1]:
-    st.subheader("Characters & Portraits")
-
-    # Nytt: Generera karaktärer
-    col1, col2 = st.columns(2)
-    if col1.button("🔄 Generate Characters From Outline"):
-        st.session_state.characters = generate_characters(
-            st.session_state.outline,
-            st.session_state.genre,
-            TONE_MAP[st.session_state.tone],
-            model
-        )
-        st.success("Characters regenerated from outline!")
-
-    if col2.button("➕ Add One More Character Based on Story"):
-        try:
-            new_char = generate_characters(
+        # Nytt: Generera karaktärer
+        col1, col2 = st.columns(2)
+        if col1.button("🔄 Generate Characters From Outline"):
+            st.session_state.characters = generate_characters(
                 st.session_state.outline,
                 st.session_state.genre,
                 TONE_MAP[st.session_state.tone],
                 model
-            )[0]
-            st.session_state.characters.append(new_char)
-            st.success(f"Added new character: {new_char['name']}")
-        except:
-            st.warning("Could not generate character.")
+            )
+            st.success("Characters regenerated from outline!")
 
-    if st.button("➕ Add New Character"):
-        st.session_state.characters.append({
-            "name": "New",
-            "role": "Unknown",
-            "personality": "",
-            "appearance": "",
-            "type": "Supporting",
-            "relations": ""
-        })
+        if col2.button("➕ Add One More Character Based on Story"):
+            try:
+                new_char = generate_characters(
+                    st.session_state.outline,
+                    st.session_state.genre,
+                    TONE_MAP[st.session_state.tone],
+                    model
+                )[0]
+                st.session_state.characters.append(new_char)
+                st.success(f"Added new character: {new_char['name']}")
+            except:
+                st.warning("Could not generate character.")
 
-    st.markdown("### Character Editor")
-    updated = []
-    for idx, char in enumerate(st.session_state.characters):
-        with st.expander(f"{char['name']} — {char['role']}", expanded=False):
-            col1, col2 = st.columns([2, 1])
-
-            with col1:
-                name = st.text_input("Name", char.get("name", ""), key=f"name_{idx}")
-                role = st.text_input("Role", char.get("role", ""), key=f"role_{idx}")
-                personality = st.text_area("Personality", char.get("personality", ""), key=f"pers_{idx}")
-                appearance = st.text_area("Appearance", char.get("appearance", ""), key=f"app_{idx}")
-            with col2:
-                portrait_key = f"char_{idx}"
-                portrait_url = st.session_state.image_cache.get(portrait_key)
-                if portrait_url:
-                    st.image(portrait_url, caption=char['name'], use_container_width=True)
-                if st.button("Regenerate Portrait", key=f"regenportrait_{idx}"):
-                    url = generate_image(appearance, st.session_state.img_model, portrait_key)
-                    st.session_state.image_cache[portrait_key] = url
-                    st.success("Portrait updated!")
-                if st.button("❌ Remove", key=f"remove_char_{idx}"):
-                    continue
-            updated.append({
-                "name": name,
-                "role": role,
-                "personality": personality,
-                "appearance": appearance,
-                "type": char.get("type", "Supporting"),
-                "relations": char.get("relations", "")
+        if st.button("➕ Add New Character"):
+            st.session_state.characters.append({
+                "name": "New",
+                "role": "Unknown",
+                "personality": "",
+                "appearance": "",
+                "type": "Supporting",
+                "relations": ""
             })
 
-    st.session_state.characters = updated
+        st.markdown("### Character Editor")
+        updated = []
+        for idx, char in enumerate(st.session_state.characters):
+            with st.expander(f"{char['name']} — {char['role']}", expanded=False):
+                col1, col2 = st.columns([2, 1])
 
-    st.markdown("### Export Characters")
-    col1, col2 = st.columns(2)
+                with col1:
+                    name = st.text_input("Name", char.get("name", ""), key=f"name_{idx}")
+                    role = st.text_input("Role", char.get("role", ""), key=f"role_{idx}")
+                    personality = st.text_area("Personality", char.get("personality", ""), key=f"pers_{idx}")
+                    appearance = st.text_area("Appearance", char.get("appearance", ""), key=f"app_{idx}")
+                with col2:
+                    portrait_key = f"char_{idx}"
+                    portrait_url = st.session_state.image_cache.get(portrait_key)
+                    if portrait_url:
+                        st.image(portrait_url, caption=char['name'], use_container_width=True)
+                    if st.button("Regenerate Portrait", key=f"regenportrait_{idx}"):
+                        url = generate_image(appearance, st.session_state.img_model, portrait_key)
+                        st.session_state.image_cache[portrait_key] = url
+                        st.success("Portrait updated!")
+                    if st.button("❌ Remove", key=f"remove_char_{idx}"):
+                        continue
+                updated.append({
+                    "name": name,
+                    "role": role,
+                    "personality": personality,
+                    "appearance": appearance,
+                    "type": char.get("type", "Supporting"),
+                    "relations": char.get("relations", "")
+                })
 
-    with col1:
-        st.download_button("Download JSON", json.dumps(st.session_state.characters), file_name="characters.json")
+        st.session_state.characters = updated
 
-    with col2:
-        try:
-            df = pd.DataFrame(st.session_state.characters)
-            buf = BytesIO()
-            fig, ax = plt.subplots(figsize=(10, len(df)*0.5))
-            ax.axis('off')
-            tbl = ax.table(cellText=df.values, colLabels=df.columns, loc='center')
-            plt.savefig(buf, format='png', bbox_inches='tight')
-            buf.seek(0)
-            st.download_button("Download Table as PNG", buf, file_name="character_table.png", mime="image/png")
-        except:
-            st.warning("Failed to export PNG.")
+        st.markdown("### Export Characters")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.download_button("Download JSON", json.dumps(st.session_state.characters), file_name="characters.json")
+
+        with col2:
+            try:
+                df = pd.DataFrame(st.session_state.characters)
+                buf = BytesIO()
+                fig, ax = plt.subplots(figsize=(10, len(df)*0.5))
+                ax.axis('off')
+                tbl = ax.table(cellText=df.values, colLabels=df.columns, loc='center')
+                plt.savefig(buf, format='png', bbox_inches='tight')
+                buf.seek(0)
+                st.download_button("Download Table as PNG", buf, file_name="character_table.png", mime="image/png")
+            except:
+                st.warning("Failed to export PNG.")
                     
 # --- FOOTER ---
 st.markdown("---")
