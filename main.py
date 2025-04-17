@@ -104,6 +104,7 @@ def narrate(text, id_key):
     st.session_state.audio_cache[id_key] = filename
     return filename
 
+# --- SIDEBAR ---
 with st.sidebar:
     st.image("https://narrativax.onrender.com/icon-192.png", width=180)
     st.markdown("### NarrativaX PWA")
@@ -130,11 +131,11 @@ if cover_url and isinstance(cover_url, str) and cover_url.startswith("http"):
     except:
         st.warning("Could not display cover image.")
 else:
-    st.info("No valid cover image available.")
+    st.image("https://narrativax.onrender.com/icon-512.png", caption="NarrativaX", use_container_width=True)
 
 # --- SETTINGS ---
 with st.expander("Book Settings", expanded=True):
-    st.session_state.prompt = st.text_area("Book Idea / Prompt", height=150)
+    st.session_state.prompt = st.text_area("Book Idea / Prompt", height=150, key="prompt_input")
     genre_type = st.radio("Content Type", ["Normal", "Adult"], horizontal=True)
     genre_list = GENRES_ADULT if genre_type == "Adult" else GENRES_NORMAL
     st.session_state.genre = st.selectbox("Genre", genre_list)
@@ -147,64 +148,39 @@ with st.expander("Book Settings", expanded=True):
     st.session_state.tagline = st.text_input("Tagline (optional)", "")
     st.session_state.regenerate_mode = st.radio("Regenerate Mode", ["Preview", "Instant"], horizontal=True)
 
-# --- SETTINGS ---
-with st.expander("Book Settings", expanded=True):
-    st.session_state.prompt = st.text_area("Book Idea / Prompt", height=150)
-    genre_type = st.radio("Content Type", ["Normal", "Adult"], horizontal=True)
-    genre_list = GENRES_ADULT if genre_type == "Adult" else GENRES_NORMAL
-    st.session_state.genre = st.selectbox("Genre", genre_list)
-    st.session_state.tone = st.selectbox("Tone", list(TONE_MAP))
-    chapters = st.slider("Chapters", 4, 20, 10)
-    model = st.selectbox("Model", MODELS)
-    voice = st.selectbox("Voice", list(VOICES))
-    st.session_state.img_model = st.selectbox("Image Model", list(IMAGE_MODELS if is_adult_mode() else SAFE_IMAGE_MODELS))
-    st.session_state.custom_title = st.text_input("Custom Title (optional)", "")
-    st.session_state.tagline = st.text_input("Tagline (optional)", "")
-    st.session_state.regenerate_mode = st.radio("Regenerate Mode", ["Preview", "Instant"], horizontal=True)
-
 # --- CREATE FULL BOOK ---
 if st.button("Create Full Book"):
-    if is_adult_mode() and not st.session_state.adult_confirmed:
-        st.session_state.want_to_generate = True
-        require_adult_confirmation()
-    else:
-        st.session_state.want_to_generate = False
-        st.session_state.book = {}
-
-        with st.spinner("Creating outline and characters..."):
-            st.session_state.outline = generate_outline(
-                st.session_state.prompt,
-                st.session_state.genre,
-                TONE_MAP[st.session_state.tone],
-                chapters, model
-            )
-            st.session_state.characters = generate_characters(
-                st.session_state.outline,
-                st.session_state.genre,
-                TONE_MAP[st.session_state.tone],
-                model
-            )
-            title_line = next((line for line in st.session_state.outline.splitlines() if "Title:" in line), None)
-            raw_title = title_line.replace("Title:", "").strip() if title_line else "Untitled"
-            st.session_state.book_title = st.session_state.custom_title or raw_title
-            cover_prompt = f"{st.session_state.book_title}, {st.session_state.genre}, {st.session_state.tone}, book cover, centered, cinematic, ultra detailed"
-            st.session_state.cover_image = generate_image(cover_prompt, st.session_state.img_model, "cover")
-
-        with st.spinner("Writing full book..."):
-            book = {}
-            sections = ["Foreword", "Introduction"] + [f"Chapter {i+1}" for i in range(chapters)] + ["Final Words"]
-            st.session_state.chapter_order = sections
-            for section in sections:
-                st.info(f"Writing {section}...")
-                book[section] = generate_section(section, st.session_state.outline, model)
-            st.session_state.book = book
-            st.success("Book created!")
-
-# --- Trigger if 18+ was just confirmed
-if st.session_state.adult_confirmed and st.session_state.want_to_generate:
     st.session_state.want_to_generate = False
-    st.experimental_rerun()
+    st.session_state.book = {}
 
+    with st.spinner("Creating outline and characters..."):
+        st.session_state.outline = generate_outline(
+            st.session_state.prompt,
+            st.session_state.genre,
+            TONE_MAP[st.session_state.tone],
+            chapters, model
+        )
+        st.session_state.characters = generate_characters(
+            st.session_state.outline,
+            st.session_state.genre,
+            TONE_MAP[st.session_state.tone],
+            model
+        )
+        title_line = next((line for line in st.session_state.outline.splitlines() if "Title:" in line), None)
+        raw_title = title_line.replace("Title:", "").strip() if title_line else "Untitled"
+        st.session_state.book_title = st.session_state.custom_title or raw_title
+        cover_prompt = f"{st.session_state.book_title}, {st.session_state.genre}, {st.session_state.tone}, book cover, centered, cinematic, ultra detailed"
+        st.session_state.cover_image = generate_image(cover_prompt, st.session_state.img_model, "cover")
+
+    with st.spinner("Writing full book..."):
+        book = {}
+        sections = ["Foreword", "Introduction"] + [f"Chapter {i+1}" for i in range(chapters)] + ["Final Words"]
+        st.session_state.chapter_order = sections
+        for section in sections:
+            st.info(f"Writing {section}...")
+            book[section] = generate_section(section, st.session_state.outline, model)
+        st.session_state.book = book
+        st.success("Book created!")
 
 # --- DISPLAY BOOK TABS ---
 if st.session_state.book:
@@ -214,7 +190,6 @@ if st.session_state.book:
             st.subheader(title)
             st.markdown(st.session_state.book[title])
 
-            # Illustration (efteråt)
             img_url = st.session_state.image_cache.get(title)
             if img_url:
                 try:
@@ -227,18 +202,16 @@ if st.session_state.book:
                     img_url = generate_image(prompt, st.session_state.img_model, title)
                     st.image(img_url, caption=f"{title} Illustration", use_container_width=True)
 
-            # Narration
             if st.button(f"Read Aloud: {title}", key=f"tts_{title}"):
                 audio = narrate(st.session_state.book[title], title)
                 st.audio(audio)
 
-            # Regenerering (Preview eller Instant)
             if st.button(f"Regenerate: {title}", key=f"regen_{title}"):
                 new_text = generate_section(title, st.session_state.outline, model)
                 if st.session_state.regenerate_mode == "Preview":
                     with st.expander("Preview New Version", expanded=True):
                         st.markdown("### New Version")
-                        st.text_area("Preview", value=new_text, height=300)
+                        st.text_area("Preview", value=new_text, height=300, key=f"preview_{title}")
                         col1, col2 = st.columns(2)
                         if col1.button("Replace with New", key=f"confirm_{title}"):
                             st.session_state.book[title] = new_text
@@ -248,7 +221,6 @@ if st.session_state.book:
                 else:
                     st.session_state.book[title] = new_text
                     st.success(f"{title} regenerated.")
-
 
     # --- CHARACTERS TAB ---
     with tabs[-1]:
