@@ -86,18 +86,22 @@ Outline: {outline}"""
 def generate_image(prompt, model_key, id_key):
     if id_key in st.session_state.image_cache:
         return st.session_state.image_cache[id_key]
+    
     model = IMAGE_MODELS[model_key]
     args = {
         "prompt": prompt[:300],
         "num_inference_steps": 30,
         "guidance_scale": 7.5,
         "width": 768,
-        "height": 1024,
-        "seed": 1339
+        "height": 1024
     }
-    image_url = replicate_client.run(model, input=args)[0]
+    
+    # Kör modellen och extrahera URL:n korrekt
+    prediction = replicate_client.run(model, input=args)
+    image_url = prediction  # Nytt format: direkt URL-sträng
     st.session_state.image_cache[id_key] = image_url
     return image_url
+
 
 def narrate(text, id_key):
     if id_key in st.session_state.audio_cache:
