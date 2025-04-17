@@ -88,6 +88,7 @@ def call_openrouter(prompt, model, max_tokens=1800):
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"].strip()
 
+
 def generate_outline(prompt, genre, tone, chapters, model):
     return call_openrouter(f"You are a ghostwriter. Create an outline for a {tone} {genre} novel with {chapters} chapters. Include: Title, Foreword, Introduction, Chapters, Final Words. Concept:\\n{prompt}", model)
 
