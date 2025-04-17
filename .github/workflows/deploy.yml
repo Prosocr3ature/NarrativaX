@@ -1,30 +1,22 @@
-name: Deploy to Production
-
-on:
-  push:
-    branches:
-      - main
-
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-
       - name: Set up Node.js
         uses: actions/setup-node@v2
         with:
           node-version: '14'
-
       - name: Install dependencies
-        run: npm install
-
-      - name: Build the app
-        run: npm run build
-
-      - name: Deploy
         run: |
-          # Lägg till kod här för att distribuera din app
-          echo "Deploying app..."
+          cd NarrativaX  # Peka på mappen där package.json finns
+          npm install
+      - name: Build the app
+        run: |
+          cd NarrativaX  # Peka på mappen där package.json finns
+          npm run build
+      - name: Deploy to production
+        run: |
+          cd NarrativaX  # Peka på mappen där package.json finns
+          npm run deploy
