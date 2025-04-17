@@ -34,25 +34,21 @@ MODELS = [
     "gryphe/mythomax-l2-13b"
 ]
 IMAGE_MODELS = {
-    "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:latest",
-    "Reliberate V3 (NSFW)": "asiryan/reliberate-v3:latest"
+    "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
+    "Reliberate V3 (NSFW)": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29"
 }
-SAFE_IMAGE_MODELS = {k: v for k, v in IMAGE_MODELS.items() if "NSFW" not in k}
 
 def init_state():
     defaults = {
         "book": {}, "outline": "", "characters": [], "prompt": "",
         "genre": "", "tone": "", "chapter_order": [], "image_cache": {}, "audio_cache": {},
         "img_model": "", "book_title": "", "custom_title": "", "tagline": "",
-        "cover_image": None, "regenerate_mode": "Preview", "want_to_generate": False
+        "cover_image": None, "regenerate_mode": "Preview"
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 init_state()
-
-def is_adult_mode():
-    return st.session_state.genre in GENRES_ADULT or st.session_state.tone in TONE_MAP and "NSFW" in TONE_MAP[st.session_state.tone]
 
 def call_openrouter(prompt, model, max_tokens=1800):
     headers = {
@@ -91,7 +87,14 @@ def generate_image(prompt, model_key, id_key):
     if id_key in st.session_state.image_cache:
         return st.session_state.image_cache[id_key]
     model = IMAGE_MODELS[model_key]
-    args = {"prompt": prompt[:300], "num_inference_steps": 30, "guidance_scale": 7.5, "width": 768, "height": 1024}
+    args = {
+        "prompt": prompt[:300],
+        "num_inference_steps": 30,
+        "guidance_scale": 7.5,
+        "width": 768,
+        "height": 1024,
+        "seed": 1339
+    }
     image_url = replicate_client.run(model, input=args)[0]
     st.session_state.image_cache[id_key] = image_url
     return image_url
@@ -108,8 +111,6 @@ def narrate(text, id_key):
 with st.sidebar:
     st.image("https://narrativax.onrender.com/icon-192.png", width=180)
     st.markdown("### NarrativaX PWA")
-    st.info("Safari → Dela → Lägg till på hemskärmen för att spara som app.")
-
     if st.button("Save Project"):
         json.dump(st.session_state.book, open("session.json", "w"))
         st.success("Project saved.")
@@ -126,10 +127,7 @@ st.title("NarrativaX — AI Book Studio")
 
 cover_url = st.session_state.cover_image
 if cover_url and isinstance(cover_url, str) and cover_url.startswith("http"):
-    try:
-        st.image(cover_url, caption=f"**{st.session_state.book_title}**\n{st.session_state.tagline}", use_container_width=True)
-    except:
-        st.warning("Could not display cover image.")
+    st.image(cover_url, caption=f"**{st.session_state.book_title}**\n{st.session_state.tagline}", use_container_width=True)
 else:
     st.image("https://narrativax.onrender.com/icon-512.png", caption="NarrativaX", use_container_width=True)
 
@@ -150,7 +148,6 @@ with st.expander("Book Settings", expanded=True):
 
 # --- CREATE FULL BOOK ---
 if st.button("Create Full Book"):
-    st.session_state.want_to_generate = False
     st.session_state.book = {}
 
     with st.spinner("Creating outline and characters..."):
@@ -182,7 +179,7 @@ if st.button("Create Full Book"):
         st.session_state.book = book
         st.success("Book created!")
 
-# --- DISPLAY BOOK TABS ---
+# --- DISPLAY BOOK ---
 if st.session_state.book:
     tabs = st.tabs(st.session_state.chapter_order + ["Characters"])
     for i, title in enumerate(st.session_state.chapter_order):
@@ -192,10 +189,7 @@ if st.session_state.book:
 
             img_url = st.session_state.image_cache.get(title)
             if img_url:
-                try:
-                    st.image(img_url, caption=f"{title} Illustration", use_container_width=True)
-                except:
-                    st.warning("Could not display illustration.")
+                st.image(img_url, caption=f"{title} Illustration", use_container_width=True)
             else:
                 if st.button(f"Generate Illustration for {title}", key=f"img_gen_{title}"):
                     prompt = f"Illustration for section '{title}': {st.session_state.book[title][:300]}"
@@ -210,7 +204,6 @@ if st.session_state.book:
                 new_text = generate_section(title, st.session_state.outline, model)
                 if st.session_state.regenerate_mode == "Preview":
                     with st.expander("Preview New Version", expanded=True):
-                        st.markdown("### New Version")
                         st.text_area("Preview", value=new_text, height=300, key=f"preview_{title}")
                         col1, col2 = st.columns(2)
                         if col1.button("Replace with New", key=f"confirm_{title}"):
@@ -221,7 +214,6 @@ if st.session_state.book:
                 else:
                     st.session_state.book[title] = new_text
                     st.success(f"{title} regenerated.")
-
     # --- CHARACTERS TAB ---
     with tabs[-1]:
         st.subheader("Character Gallery")
