@@ -18,32 +18,53 @@ replicate_client = replicate.Client(api_token=REPLICATE_API_TOKEN)
 
 TONE_MAP = {
     "Romantic": "sensual, romantic, literary",
+    "Dark Romantic": "moody, passionate, emotional",
     "NSFW": "detailed erotic, emotional, mature",
-    "Hardcore": "intense, vulgar, graphic, pornographic"
+    "Hardcore": "intense, vulgar, graphic, pornographic",
+    "BDSM": "dominant, submissive, explicit, power-play",
+    "Playful": "flirty, teasing, lighthearted",
+    "Mystical": "dreamlike, surreal, poetic",
+    "Gritty": "raw, realistic, street-style",
+    "Slow Burn": "subtle, growing tension, emotional depth",
+    "Wholesome": "uplifting, warm, feel-good",
+    "Suspenseful": "tense, thrilling, page-turning",
+    "Philosophical": "deep, reflective, thoughtful"
 }
+
 GENRES_NORMAL = [
     "Adventure", "Fantasy", "Dark Fantasy", "Romance", "Thriller", "Mystery",
-    "Drama", "Sci-Fi", "Slice of Life", "Horror", "Crime", "LGBTQ+", "Action"
+    "Drama", "Sci-Fi", "Slice of Life", "Horror", "Crime", "LGBTQ+", "Action",
+    "Psychological", "Historical Fiction", "Supernatural", "Steampunk",
+    "Cyberpunk", "Post-Apocalyptic", "Surreal", "Noir"
 ]
-GENRES_ADULT = ["Erotica", "NSFW", "Hardcore", "BDSM"]
+
+GENRES_ADULT = [
+    "Erotica", "NSFW", "Hardcore", "BDSM", "Futanari", "Incubus/Succubus",
+    "Monster Romance", "Dubious Consent", "Voyeurism", "Yaoi", "Yuri", "Taboo Fantasy"
+]
+
 GENRES = GENRES_NORMAL + GENRES_ADULT
 VOICES = {"Rachel": "default", "Bella": "default", "Antoni": "default", "Elli": "default", "Josh": "default"}
+
 MODELS = [
     "nothingiisreal/mn-celeste-12b",
     "openchat/openchat-3.5-0106",
     "gryphe/mythomax-l2-13b"
 ]
+
 IMAGE_MODELS = {
     "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
     "Reliberate V3 (NSFW)": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29"
 }
+
+SAFE_IMAGE_MODELS = {k: v for k, v in IMAGE_MODELS.items() if "NSFW" not in k}
 
 def init_state():
     defaults = {
         "book": {}, "outline": "", "characters": [], "prompt": "",
         "genre": "", "tone": "", "chapter_order": [], "image_cache": {}, "audio_cache": {},
         "img_model": "", "book_title": "", "custom_title": "", "tagline": "",
-        "cover_image": None, "regenerate_mode": "Preview"
+        "cover_image": None, "regenerate_mode": "Preview", "want_to_generate": False
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -68,16 +89,16 @@ def call_openrouter(prompt, model, max_tokens=1800):
     return r.json()["choices"][0]["message"]["content"].strip()
 
 def generate_outline(prompt, genre, tone, chapters, model):
-    return call_openrouter(f"You are a ghostwriter. Create an outline for a {tone} {genre} novel with {chapters} chapters. Include: Title, Foreword, Introduction, Chapters, Final Words. Concept:\n{prompt}", model)
+    return call_openrouter(f"You are a ghostwriter. Create an outline for a {tone} {genre} novel with {chapters} chapters. Include: Title, Foreword, Introduction, Chapters, Final Words. Concept:\\n{prompt}", model)
 
 def generate_section(title, outline, model):
-    return call_openrouter(f"Write the full content for section '{title}' using this outline:\n{outline}", model)
+    return call_openrouter(f"Write the full content for section '{title}' using this outline:\\n{outline}", model)
 
 def generate_characters(outline, genre, tone, model):
-    prompt = f"""Create characters for a {tone} {genre} novel based on this outline.
+    prompt = f\"\"\"Create characters for a {tone} {genre} novel based on this outline.
 Return a JSON list like:
 [{{"name": "X", "role": "Y", "personality": "...", "appearance": "..."}}]
-Outline: {outline}"""
+Outline: {outline}\"\"\"
     try:
         return json.loads(call_openrouter(prompt, model))
     except:
@@ -86,7 +107,6 @@ Outline: {outline}"""
 def generate_image(prompt, model_key, id_key):
     if id_key in st.session_state.image_cache:
         return st.session_state.image_cache[id_key]
-    
     model = IMAGE_MODELS[model_key]
     args = {
         "prompt": prompt[:300],
@@ -95,19 +115,23 @@ def generate_image(prompt, model_key, id_key):
         "width": 768,
         "height": 1024
     }
-    
-    # Kör modellen och extrahera URL:n korrekt
-    prediction = replicate_client.run(model, input=args)
-    image_url = prediction  # Nytt format: direkt URL-sträng
-    st.session_state.image_cache[id_key] = image_url
-    return image_url
-
+    output = replicate_client.run(model, input=args)
+    if isinstance(output, str) and output.startswith("http"):
+        image_result = output
+    elif hasattr(output, "read"):
+        image_data = output.read()
+        image_result = Image.open(BytesIO(image_data))
+    else:
+        st.error("Image generation failed: unknown output type.")
+        return None
+    st.session_state.image_cache[id_key] = image_result
+    return image_result
 
 def narrate(text, id_key):
     if id_key in st.session_state.audio_cache:
         return st.session_state.audio_cache[id_key]
     filename = f"{id_key}.mp3"
-    gTTS(text.replace("\n", " ")).save(filename)
+    gTTS(text.replace("\\n", " ")).save(filename)
     st.session_state.audio_cache[id_key] = filename
     return filename
 
@@ -115,6 +139,8 @@ def narrate(text, id_key):
 with st.sidebar:
     st.image("https://narrativax.onrender.com/icon-192.png", width=180)
     st.markdown("### NarrativaX PWA")
+    st.info("Safari → Dela → Lägg till på hemskärmen för att spara som app.")
+
     if st.button("Save Project"):
         json.dump(st.session_state.book, open("session.json", "w"))
         st.success("Project saved.")
@@ -131,7 +157,12 @@ st.title("NarrativaX — AI Book Studio")
 
 cover_url = st.session_state.cover_image
 if cover_url and isinstance(cover_url, str) and cover_url.startswith("http"):
-    st.image(cover_url, caption=f"**{st.session_state.book_title}**\n{st.session_state.tagline}", use_container_width=True)
+    try:
+        st.image(cover_url, caption=f"**{st.session_state.book_title}**\\n{st.session_state.tagline}", use_container_width=True)
+    except:
+        st.warning("Could not display cover image.")
+elif isinstance(cover_url, Image.Image):
+    st.image(cover_url, caption="NarrativaX", use_container_width=True)
 else:
     st.image("https://narrativax.onrender.com/icon-512.png", caption="NarrativaX", use_container_width=True)
 
@@ -152,6 +183,7 @@ with st.expander("Book Settings", expanded=True):
 
 # --- CREATE FULL BOOK ---
 if st.button("Create Full Book"):
+    st.session_state.want_to_generate = False
     st.session_state.book = {}
 
     with st.spinner("Creating outline and characters..."):
@@ -183,7 +215,7 @@ if st.button("Create Full Book"):
         st.session_state.book = book
         st.success("Book created!")
 
-# --- DISPLAY BOOK ---
+# --- DISPLAY BOOK TABS ---
 if st.session_state.book:
     tabs = st.tabs(st.session_state.chapter_order + ["Characters"])
     for i, title in enumerate(st.session_state.chapter_order):
@@ -193,12 +225,16 @@ if st.session_state.book:
 
             img_url = st.session_state.image_cache.get(title)
             if img_url:
-                st.image(img_url, caption=f"{title} Illustration", use_container_width=True)
+                try:
+                    st.image(img_url, caption=f"{title} Illustration", use_container_width=True)
+                except:
+                    st.warning("Could not display illustration.")
             else:
                 if st.button(f"Generate Illustration for {title}", key=f"img_gen_{title}"):
                     prompt = f"Illustration for section '{title}': {st.session_state.book[title][:300]}"
                     img_url = generate_image(prompt, st.session_state.img_model, title)
-                    st.image(img_url, caption=f"{title} Illustration", use_container_width=True)
+                    if img_url:
+                        st.image(img_url, caption=f"{title} Illustration", use_container_width=True)
 
             if st.button(f"Read Aloud: {title}", key=f"tts_{title}"):
                 audio = narrate(st.session_state.book[title], title)
@@ -208,6 +244,7 @@ if st.session_state.book:
                 new_text = generate_section(title, st.session_state.outline, model)
                 if st.session_state.regenerate_mode == "Preview":
                     with st.expander("Preview New Version", expanded=True):
+                        st.markdown("### New Version")
                         st.text_area("Preview", value=new_text, height=300, key=f"preview_{title}")
                         col1, col2 = st.columns(2)
                         if col1.button("Replace with New", key=f"confirm_{title}"):
@@ -218,6 +255,7 @@ if st.session_state.book:
                 else:
                     st.session_state.book[title] = new_text
                     st.success(f"{title} regenerated.")
+
     # --- CHARACTERS TAB ---
     with tabs[-1]:
         st.subheader("Character Gallery")
@@ -253,8 +291,12 @@ if st.session_state.book:
                 prompt = st.text_input("Portrait prompt", char.get("appearance", ""), key=f"imgprompt_{idx}")
                 if st.button("Generate Portrait", key=f"charportrait_{idx}"):
                     url = generate_image(prompt, st.session_state.img_model, f"char_{idx}")
-                    st.image(url, caption=char['name'], use_container_width=True)
-                    images.append((char['name'], url))
+                    if isinstance(url, str) and url.startswith("http"):
+                        st.image(url, caption=char['name'], use_container_width=True)
+                        images.append((char['name'], url))
+                    elif isinstance(url, Image.Image):
+                        st.image(url, caption=char['name'], use_container_width=True)
+                        images.append((char['name'], url))
 
         st.markdown("### Export Characters")
         col1, col2, col3 = st.columns(3)
@@ -280,7 +322,13 @@ if st.session_state.book:
                 if images:
                     cols = 3
                     size = (256, 256)
-                    imgs = [Image.open(BytesIO(requests.get(url).content)).resize(size) for _, url in images]
+                    imgs = []
+                    for name, src in images:
+                        if isinstance(src, str):
+                            img = Image.open(BytesIO(requests.get(src).content)).resize(size)
+                        else:
+                            img = src.resize(size)
+                        imgs.append(img)
                     rows = (len(imgs) + cols - 1) // cols
                     collage = Image.new("RGB", (size[0]*cols, size[1]*rows))
                     for idx, img in enumerate(imgs):
