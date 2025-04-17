@@ -1,0 +1,10 @@
+flask
+streamlit
+requests
+gtts
+Pillow
+matplotlib
+python-docx
+fpdf
+pandas
+replicate
