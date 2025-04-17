@@ -224,37 +224,6 @@ if st.session_state.book:
             st.subheader(title)
             st.markdown(st.session_state.book[title])
 
-            img_url = st.session_state.image_cache.get(title)
-            if img_url:
-                try:
-                    st.image(img_url, caption=f"{title} Illustration", use_container_width=True)
-                except:
-                    st.warning("Could not display illustration.")
-            else:
-                if st.button(f"Generate Illustration for {title}", key=f"img_gen_{title}"):
-                    prompt = f"Illustration for section '{title}': {st.session_state.book[title][:300]}"
-                    img_url = generate_image(prompt, st.session_state.img_model, title)
-                    st.image(img_url, caption=f"{title} Illustration", use_container_width=True)
-
-            if st.button(f"Read Aloud: {title}", key=f"tts_{title}"):
-                audio = narrate(st.session_state.book[title], title)
-                st.audio(audio)
-
-            if st.button(f"Regenerate: {title}", key=f"regen_{title}"):
-                new_text = generate_section(title, st.session_state.outline, model)
-                if st.session_state.regenerate_mode == "Preview":
-                    with st.expander("Preview New Version", expanded=True):
-                        st.markdown("### New Version")
-                        st.text_area("Preview", value=new_text, height=300, key=f"preview_{title}")
-                        col1, col2 = st.columns(2)
-                        if col1.button("Replace with New", key=f"confirm_{title}"):
-                            st.session_state.book[title] = new_text
-                            st.success(f"{title} updated.")
-                        if col2.button("Cancel", key=f"cancel_{title}"):
-                            st.info("No changes made.")
-                else:
-                    st.session_state.book[title] = new_text
-                    st.success(f"{title} regenerated.")
 
 # --- CHARACTERS TAB ---
 with tabs[-1]:
