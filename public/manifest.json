@@ -5,9 +5,9 @@
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#111827",
-  "description": "NarrativaX — The AI Book Studio for creators who want to go faster, publish smarter, and write the worlds they actually want to live in.",
   "orientation": "portrait",
   "scope": "/",
+  "description": "NarrativaX — The AI Book Studio for creators who want to go faster, publish smarter, and write the worlds they actually want to live in.",
   "icons": [
     {
       "src": "/icon-192.png",
