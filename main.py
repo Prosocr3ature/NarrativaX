@@ -64,17 +64,17 @@ def call_openrouter(prompt, model, max_tokens=1800):
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"].strip()
 
-# Update the generate_image function to handle image fetching
+# Fix 1: Update image handling and column references
 def generate_image(prompt, model_key, id_key):
     if id_key in st.session_state.image_cache:
         return st.session_state.image_cache[id_key]
     
-    args = {"prompt": prompt[:300], "num_inference_steps": 30, "guidance_scale": 7.5, "width": 768, "height": 1024}
+    args = {"prompt": prompt[:300], "num_inference_steps": 30, 
+            "guidance_scale": 7.5, "width": 768, "height": 1024}
     try:
         output = replicate.run(IMAGE_MODELS[model_key], input=args)
         if output and isinstance(output, list):
             image_url = output[0]
-            # Verify and load the image
             response = requests.get(image_url)
             response.raise_for_status()
             image = Image.open(BytesIO(response.content))
@@ -84,27 +84,38 @@ def generate_image(prompt, model_key, id_key):
         st.error(f"Image generation failed: {str(e)}")
     return None
 
-# Update the cover image display section
+# Fix 2: Update deprecated parameter in image display
 with st.expander("📔 Book Cover"):
     if st.session_state.get('cover'):
         try:
-            st.image(st.session_state.cover, use_column_width=True)
+            st.image(st.session_state.cover, use_container_width=True)  # Changed parameter
         except Exception as e:
             st.error(f"Error displaying cover: {str(e)}")
             st.session_state.cover = None
     else:
         st.warning("No cover generated yet")
 
-# Update the chapter image display
-with col2:
-    if st.session_state.image_cache.get(section):
-        try:
-            st.image(st.session_state.image_cache[section])
-        except Exception as e:
-            st.error(f"Error displaying image: {str(e)}")
-            st.session_state.image_cache[section] = None
-    else:
-        st.warning("No image generated for this section")
+# Fix 3: Properly scope column references in chapter display
+if "book" in st.session_state:
+    for section, content in st.session_state.book.items():
+        with st.expander(f"📜 {section}"):
+            col1, col2 = st.columns([3, 2])  # Define columns inside the loop
+            with col1:
+                st.write(content)
+                with NamedTemporaryFile(suffix=".mp3") as tf:
+                    text_to_speech(content, tf.name)
+                    audio_bytes = open(tf.name, "rb").read()
+                    st.audio(audio_bytes, format="audio/mp3")
+            with col2:
+                if st.session_state.image_cache.get(section):
+                    try:
+                        st.image(st.session_state.image_cache[section], 
+                               use_container_width=True)  # Changed parameter
+                    except Exception as e:
+                        st.error(f"Error displaying image: {str(e)}")
+                        st.session_state.image_cache[section] = None
+                else:
+                    st.warning("No image generated for this section")
 
 def generate_characters(outline, genre, tone, model):
     prompt = f"Create vivid, immersive characters for a {tone} {genre} novel in JSON format (name, role, personality, appearance):\n{outline}"
