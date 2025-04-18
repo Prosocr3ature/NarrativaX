@@ -16,38 +16,15 @@ from io import BytesIO
 import streamlit as st
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 
-st.set_page_config(page_title="NarrativaX", page_icon="🪶", layout="wide")
-
-st.markdown("""
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        html, body, [class*="css"] {
-            font-size: 18px !important;
-        }
-        .block-container {
-            padding-top: 2rem;
-            padding-left: 1rem;
-            padding-right: 1rem;
-        }
-        textarea, input, select, button {
-            font-size: 1.1rem !important;
-        }
-        @media (max-width: 768px) {
-            img {
-                max-width: 100% !important;
-                height: auto !important;
-            }
-            h1, h2, h3, h4, h5, h6 {
-                font-size: 1.5rem !important;
-            }
-        }
-    </style>
-""", unsafe_allow_html=True)
+# ========== INITIALIZATION ==========
+st.set_page_config(page_title="NarrativaX", page_icon="🪶", layout="wide")  # FIRST Streamlit command
 
 # ========== CONSTANTS ==========
 LOGO_URL = "https://raw.githubusercontent.com/Prosocr3ature/NarrativaX/main/logo.png"
 MAX_TOKENS = 1800
 IMAGE_SIZE = (768, 1024)
+PROGRESS_QUEUE = queue.Queue()  # Moved after set_page_config
+
 LOADING_MESSAGES = [
     "Sharpening quills...", "Mixing metaphorical ink...",
     "Convincing characters to behave...", "Battling clichés...",
