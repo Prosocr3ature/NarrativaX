@@ -11,11 +11,13 @@ import replicate
 import pandas as pd
 from docx.shared import Inches
 
+# Initialize Streamlit settings
 st.set_page_config(page_title="NarrativaX", page_icon="🪶", layout="wide")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 replicate_client = replicate.Client(api_token=REPLICATE_API_TOKEN)
 
+# Tone and genre mapping
 TONE_MAP = {
     "Romantic": "sensual, romantic, literary",
     "Dark Romantic": "moody, passionate, emotional",
@@ -88,7 +90,6 @@ def call_openrouter(prompt, model, max_tokens=1800):
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"].strip()
 
-
 def generate_outline(prompt, genre, tone, chapters, model):
     return call_openrouter(f"You are a ghostwriter. Create an outline for a {tone} {genre} novel with {chapters} chapters. Include: Title, Foreword, Introduction, Chapters, Final Words. Concept:\\n{prompt}", model)
 
@@ -120,7 +121,6 @@ def generate_image(prompt, model_key, id_key):
     
     output = replicate_client.run(model, input=args)
 
-    # FIX: om output är lista med URL
     if isinstance(output, list) and isinstance(output[0], str) and output[0].startswith("http"):
         image_result = output[0]
     else:
