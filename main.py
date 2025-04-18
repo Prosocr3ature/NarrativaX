@@ -16,6 +16,8 @@ from io import BytesIO
 import streamlit as st
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 
+st.set_page_config(page_title="NarrativaX", page_icon="🪶", layout="wide")
+
 st.markdown("""
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
