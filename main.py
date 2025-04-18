@@ -4,6 +4,8 @@ import requests
 import zipfile
 import random
 import replicate
+import threading
+import queue
 from docx import Document
 from docx.shared import Inches
 from fpdf import FPDF
@@ -52,6 +54,7 @@ IMAGE_MODELS = {
     "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
     "Reliberate V3 (NSFW)": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29"
 }
+PROGRESS_QUEUE = queue.Queue()
 
 # ========== INITIALIZATION ==========
 st.set_page_config(page_title="NarrativaX", page_icon="🪶", layout="wide")
@@ -98,95 +101,67 @@ def generate_image(prompt: str, model_key: str, id_key: str) -> Image.Image:
             st.session_state.image_cache[id_key] = image
             return image
     except Exception as e:
-        st.error(f"🖼️ Image generation failed: {str(e)}")
+        PROGRESS_QUEUE.put(("ERROR", f"Image generation failed: {str(e)}", 0, ""))
     return None
 
-def generate_book_components():
-    config = st.session_state.gen_progress
-    progress_bar = st.progress(0)
-    status_container = st.empty()
-    preview_column = st.columns(1)[0]
-    
-    sections_count = config['chapters'] + 2
-    total_steps = 3 + (sections_count * 2)
-    current_step = 0
-    book = {}
-
+def background_generation_task():
     try:
-        # Generate Outline
-        with status_container.status("🔮 Crafting story structure...", expanded=True) as status:
-            outline = call_openrouter(
-                f"Create detailed outline for {TONE_MAP[config['tone']]} {config['genre']} novel: {config['prompt']}", 
-                config['model']
-            )
-            current_step += 1
-            progress_bar.progress(current_step/total_steps)
-            status.update(label="📜 Outline complete!", state="complete")
-            preview_column.markdown(f"**Outline Preview:**\n```\n{outline[:200]}...\n```")
+        config = st.session_state.gen_progress.copy()
+        total_steps = 3 + (config['chapters'] + 2) * 2
+        current_step = 0
+        book = {}
 
-        # Generate Chapters
+        # Outline
+        PROGRESS_QUEUE.put(("🔮", "Crafting story structure...", current_step/total_steps, ""))
+        outline = call_openrouter(
+            f"Create detailed outline for {TONE_MAP[config['tone']]} {config['genre']} novel: {config['prompt']}", 
+            config['model']
+        )
+        current_step += 1
+        PROGRESS_QUEUE.put(("📜", "Outline complete!", current_step/total_steps, outline[:200]))
+
+        # Chapters
         sections = ["Foreword"] + [f"Chapter {i+1}" for i in range(config['chapters'])] + ["Epilogue"]
         for sec in sections:
-            # Text Generation
-            with status_container.status(f"📖 Writing {sec}...", expanded=True) as status:
-                book[sec] = call_openrouter(
-                    f"Write immersive '{sec}' content: {outline}",
-                    config['model']
-                )
-                current_step += 1
-                progress_bar.progress(current_step/total_steps)
-                status.update(label=f"✅ {sec} text complete!", state="complete")
-                preview_column.markdown(f"**{sec} Preview:**\n{book[sec][:150]}...")
-
-            # Image Generation
-            with status_container.status(f"🎨 Painting visual for {sec}...", expanded=True) as status:
-                generate_image(book[sec], config['img_model'], sec)
-                current_step += 1
-                progress_bar.progress(current_step/total_steps)
-                status.update(label=f"🖼️ {sec} image complete!", state="complete")
-                if st.session_state.image_cache.get(sec):
-                    preview_column.image(
-                        st.session_state.image_cache[sec], 
-                        use_container_width=True,
-                        caption=f"Visual for {sec}"
-                    )
-
-        # Generate Cover
-        with status_container.status("🖼️ Crafting masterpiece cover...", expanded=True) as status:
-            st.session_state.cover = generate_image(
-                f"Cinematic cover: {config['prompt']}, {config['genre']}, {config['tone']}", 
-                config['img_model'], 
-                "cover"
-            )
+            # Text
+            PROGRESS_QUEUE.put(("📖", f"Writing {sec}...", current_step/total_steps, ""))
+            content = call_openrouter(f"Write immersive '{sec}' content: {outline}", config['model'])
+            book[sec] = content
             current_step += 1
-            progress_bar.progress(current_step/total_steps)
-            status.update(label="🎉 Cover art complete!", state="complete")
-            if st.session_state.cover:
-                preview_column.image(st.session_state.cover, use_container_width=True)
+            PROGRESS_QUEUE.put(("✅", f"{sec} text complete!", current_step/total_steps, content[:150]))
 
-        # Generate Characters
-        with status_container.status("👥 Bringing characters to life...", expanded=True) as status:
-            st.session_state.characters = json.loads(call_openrouter(
-                f"""Create vivid characters for {config['genre']} novel in JSON format:
-                {outline}
-                Format: [{{"name":"","role":"","personality":"","appearance":""}}]""",
-                config['model']
-            ))
+            # Image
+            PROGRESS_QUEUE.put(("🎨", f"Painting {sec} visual...", current_step/total_steps, ""))
+            generate_image(content, config['img_model'], sec)
             current_step += 1
-            progress_bar.progress(current_step/total_steps)
-            status.update(label="🤩 Characters ready!", state="complete")
-            preview_column.markdown("**Main Characters:**\n" + "\n".join(
-                [f"- {char['name']} ({char['role']})" for char in st.session_state.characters[:3]]
-            ))
+            PROGRESS_QUEUE.put(("🖼️", f"{sec} image complete!", current_step/total_steps, ""))
+
+        # Cover
+        PROGRESS_QUEUE.put(("🖼️", "Creating cover...", current_step/total_steps, ""))
+        st.session_state.cover = generate_image(
+            f"Cinematic cover: {config['prompt']}, {config['genre']}, {config['tone']}", 
+            config['img_model'], 
+            "cover"
+        )
+        current_step += 1
+        PROGRESS_QUEUE.put(("🎉", "Cover complete!", current_step/total_steps, ""))
+
+        # Characters
+        PROGRESS_QUEUE.put(("👥", "Creating characters...", current_step/total_steps, ""))
+        st.session_state.characters = json.loads(call_openrouter(
+            f"""Create characters for {config['genre']} novel in JSON format:
+            {outline}
+            Format: [{{"name":"","role":"","personality":"","appearance":""}}]""",
+            config['model']
+        ))
+        current_step += 1
+        PROGRESS_QUEUE.put(("🤩", "Characters ready!", current_step/total_steps, ""))
 
         st.session_state.book = book
-        st.balloons()
-        st.success("📖 Your Immersive Book is Ready!")
-        st.session_state.gen_progress = None
+        PROGRESS_QUEUE.put(("COMPLETE", "📖 Book generation complete!", 1.0, ""))
 
     except Exception as e:
-        st.error(f"🚨 Generation Interrupted: {str(e)}")
-        st.session_state.gen_progress = None
+        PROGRESS_QUEUE.put(("ERROR", f"Generation failed: {str(e)}", 0, ""))
 
 # ========== UI COMPONENTS ==========
 def dramatic_logo():
@@ -197,6 +172,11 @@ def dramatic_logo():
             0% {{ transform: translate(-50%, -55%) rotate(-5deg); }}
             50% {{ transform: translate(-50%, -60%) rotate(5deg); }}
             100% {{ transform: translate(-50%, -55%) rotate(-5deg); }}
+        }}
+        @keyframes pulse-text {{
+            0% {{ opacity: 0.8; text-shadow: 0 0 10px #ff69b4; }}
+            50% {{ opacity: 1; text-shadow: 0 0 20px #ff69b4; }}
+            100% {{ opacity: 0.8; text-shadow: 0 0 10px #ff69b4; }}
         }}
         .logo-overlay {{
             position: fixed;
@@ -225,7 +205,7 @@ def dramatic_logo():
             font-size: clamp(1.5rem, 4vw, 2.5rem);
             margin-top: 2rem;
             color: #ff69b4;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            animation: pulse-text 2s infinite;
         }}
         .quote {{
             font-family: 'Cinzel', serif;
@@ -244,10 +224,59 @@ def dramatic_logo():
     </div>
     """, unsafe_allow_html=True)
 
+def progress_animation():
+    if not PROGRESS_QUEUE.empty():
+        status = PROGRESS_QUEUE.get()
+        
+        with st.empty() as container:
+            while True:
+                if status[0] == "COMPLETE":
+                    st.balloons()
+                    st.session_state.gen_progress = None
+                    break
+                elif status[0] == "ERROR":
+                    st.error(f"🚨 {status[1]}")
+                    st.session_state.gen_progress = None
+                    break
+                else:
+                    emoji, message, progress, preview = status
+                    container.markdown(f"""
+                    <style>
+                        @keyframes pulse {{
+                            0% {{ transform: scale(0.95); opacity: 0.8; }}
+                            50% {{ transform: scale(1.1); opacity: 1; }}
+                            100% {{ transform: scale(0.95); opacity: 0.8; }}
+                        }}
+                        .status-emoji {{
+                            font-size: 3rem;
+                            animation: pulse 1.5s infinite;
+                            display: inline-block;
+                        }}
+                        .preview-box {{
+                            background: rgba(255,255,255,0.1);
+                            border-radius: 10px;
+                            padding: 1rem;
+                            margin: 1rem 0;
+                            border: 1px solid #ffffff20;
+                        }}
+                    </style>
+                    <div style="text-align: center; padding: 2rem">
+                        <div class="status-emoji">{emoji}</div>
+                        <h3 style="margin: 1rem 0">{message}</h3>
+                        <progress value="{progress}" max="1" style="width: 100%; height: 10px"></progress>
+                        {f'<div class="preview-box">{preview}...</div>' if preview else ''}
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                try:
+                    status = PROGRESS_QUEUE.get(timeout=0.1)
+                except queue.Empty:
+                    break
+
 def main_interface():
     if st.session_state.get('gen_progress'):
         dramatic_logo()
-        generate_book_components()
+        progress_animation()
     else:
         st.markdown(f'<img src="{LOGO_URL}" width="300" style="float:right; margin:-50px -20px 0 0">', unsafe_allow_html=True)
         st.title("NarrativaX — Immersive AI Book Creator")
@@ -267,6 +296,7 @@ def main_interface():
                     "prompt": prompt, "genre": genre, "tone": tone,
                     "chapters": chapters, "model": model, "img_model": img_model
                 }
+                threading.Thread(target=background_generation_task, daemon=True).start()
                 st.rerun()
 
 def render_sidebar():
