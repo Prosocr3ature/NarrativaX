@@ -14,6 +14,7 @@ from gtts import gTTS
 from PIL import Image
 from io import BytesIO
 import streamlit as st
+from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 # ========== CONSTANTS ==========
 LOGO_URL = "https://raw.githubusercontent.com/Prosocr3ature/NarrativaX/main/logo.png"
@@ -59,9 +60,8 @@ PROGRESS_QUEUE = queue.Queue()
 # ========== INITIALIZATION ==========
 st.set_page_config(page_title="NarrativaX", page_icon="🪶", layout="wide")
 
-if 'image_cache' not in st.session_state:
-    st.session_state.image_cache = {}
-for key in ['book', 'outline', 'cover', 'characters', 'gen_progress']:
+# Initialize session state
+for key in ['image_cache', 'book', 'outline', 'cover', 'characters', 'gen_progress']:
     st.session_state.setdefault(key, None)
 
 # ========== CORE FUNCTIONS ==========
@@ -106,7 +106,7 @@ def generate_image(prompt: str, model_key: str, id_key: str) -> Image.Image:
 
 def background_generation_task():
     try:
-        config = st.session_state.gen_progress.copy()
+        config = dict(st.session_state.gen_progress)
         total_steps = 3 + (config['chapters'] + 2) * 2
         current_step = 0
         book = {}
@@ -162,6 +162,7 @@ def background_generation_task():
 
     except Exception as e:
         PROGRESS_QUEUE.put(("ERROR", f"Generation failed: {str(e)}", 0, ""))
+        st.session_state.gen_progress = None
 
 # ========== UI COMPONENTS ==========
 def dramatic_logo():
@@ -296,7 +297,9 @@ def main_interface():
                     "prompt": prompt, "genre": genre, "tone": tone,
                     "chapters": chapters, "model": model, "img_model": img_model
                 }
-                threading.Thread(target=background_generation_task, daemon=True).start()
+                gen_thread = threading.Thread(target=background_generation_task, daemon=True)
+                add_script_run_ctx(gen_thread)
+                gen_thread.start()
                 st.rerun()
 
 def render_sidebar():
