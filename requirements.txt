@@ -5,5 +5,4 @@ gtts>=2.4.0
 Pillow>=10.3.0
 replicate>=0.24.0
 requests>=2.31.0
-pandas>=2.1.0
-python-dotenv>=1.0.0
+google-fonts==1.2.0
