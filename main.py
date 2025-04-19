@@ -1,21 +1,32 @@
 import os
 import json
 import requests
+import zipfile
 import random
 import replicate
 import threading
 import queue
 import base64
+import time
+from html import escape
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from docx import Document
+from docx.shared import Inches
+from fpdf import FPDF
+from tempfile import NamedTemporaryFile
+from gtts import gTTS
 from PIL import Image
 from io import BytesIO
 import streamlit as st
 from streamlit.runtime.scriptrunner import add_script_run_ctx
-from gtts import gTTS
-from ebooklib import epub
-from fpdf import FPDF
-from docx import Document
-from docx.shared import Inches
-from tempfile import NamedTemporaryFile
+
+# ========== INITIALIZATION ==========
+st.set_page_config(
+    page_title="NarrativaX", 
+    page_icon="🪶", 
+    layout="wide", 
+    initial_sidebar_state="collapsed"
+)
 
 # ========== CONSTANTS ==========
 LOGO_URL = "https://raw.githubusercontent.com/Prosocr3ature/NarrativaX/main/logo.png"
@@ -207,26 +218,6 @@ def background_generation_wrapper():
     finally:
         st.session_state.gen_progress = None
 
-def generate_epub():
-    try:
-        book = epub.EpubBook()
-        book.set_title("Generated Story")
-        book.set_language("en")
-        book.add_metadata("DC", "creator", "NarrativaX")
-
-        for chapter, content in st.session_state.book.items():
-            c = epub.EpubHtml(title=chapter, fileName=f"{chapter}.xhtml", lang="en")
-            c.set_body(content)
-            book.add_item(c)
-
-        book.add_item(epub.EpubNav())
-        book.set_cover("cover.jpg", open("cover.jpg", "rb").read())
-
-        epub.write_epub("generated_story.epub", book, {})
-        st.success("EPUB Export Completed!")
-    except Exception as e:
-        st.error(f"EPUB Export Error: {str(e)}")
-
 # ========== UI COMPONENTS ==========
 def dramatic_logo():
     safe_message = escape(random.choice(SAFE_LOADING_MESSAGES))
@@ -368,10 +359,149 @@ def main_interface():
         st.session_state.gen_progress = None
         st.stop()
 
+def render_sidebar():
+    try:
+        with st.sidebar:
+            st.markdown(f'<img src="{escape(LOGO_URL)}" width="200" style="margin-bottom:20px">', unsafe_allow_html=True)
+            
+            if st.button("💾 Save Project"):
+                try:
+                    save_data = {
+                        'book': st.session_state.book,
+                        'outline': st.session_state.outline,
+                        'characters': st.session_state.characters,
+                        'image_cache': st.session_state.image_cache,
+                        'cover': pil_to_base64(st.session_state.cover) if st.session_state.cover else None
+                    }
+                    with open("session.narrx", "w") as f:
+                        json.dump(save_data, f)
+                    st.success("Project saved!")
+                except Exception as e:
+                    st.error(f"Save failed: {escape(str(e))[:200]}...")
+
+            if st.button("📂 Load Project"):
+                try:
+                    with open("session.narrx", "r") as f:
+                        data = json.load(f)
+                    
+                    st.session_state.book = data.get('book')
+                    st.session_state.outline = data.get('outline')
+                    st.session_state.characters = data.get('characters')
+                    st.session_state.image_cache = {
+                        k: base64_to_pil(v) if isinstance(v, str) else v 
+                        for k, v in data.get('image_cache', {}).items()
+                    }
+                    if data.get('cover'):
+                        st.session_state.cover = base64_to_pil(data['cover'])
+                    st.success("Project loaded!")
+                except Exception as e:
+                    st.error(f"Load failed: {escape(str(e))[:200]}...")
+
+            if st.session_state.book and st.button("📦 Export Book"):
+                with st.spinner("Packaging your masterpiece..."):
+                    try:
+                        with NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+                            with zipfile.ZipFile(tmp.name, 'w') as zipf:
+                                # DOCX
+                                doc = Document()
+                                for sec, content in st.session_state.book.items():
+                                    doc.add_heading(sec, level=1)
+                                    doc.add_paragraph(content)
+                                    if sec in st.session_state.image_cache:
+                                        img = st.session_state.image_cache[sec]
+                                        if isinstance(img, str):
+                                            img = base64_to_pil(img)
+                                        img_io = BytesIO()
+                                        img.save(img_io, format='PNG')
+                                        doc.add_picture(img_io, width=Inches(5))
+                                doc.save("book.docx")
+                                zipf.write("book.docx")
+                                os.remove("book.docx")
+
+                                # PDF
+                                pdf = FPDF()
+                                pdf.set_auto_page_break(auto=True, margin=15)
+                                if st.session_state.cover:
+                                    cover_path = "cover.png"
+                                    st.session_state.cover.save(cover_path)
+                                    pdf.image(cover_path, x=0, y=0, w=pdf.w, h=pdf.h)
+                                    pdf.add_page()
+                                pdf.set_font("Arial", size=12)
+                                for sec, content in st.session_state.book.items():
+                                    pdf.set_font("Arial", 'B', 16)
+                                    pdf.cell(0, 10, sec, ln=True)
+                                    pdf.set_font("Arial", size=12)
+                                    pdf.multi_cell(0, 10, content)
+                                pdf.output("book.pdf")
+                                zipf.write("book.pdf")
+                                os.remove("book.pdf")
+
+                                # Audio
+                                for i, (sec, content) in enumerate(st.session_state.book.items()):
+                                    with NamedTemporaryFile(delete=False, suffix=".mp3") as audio_tmp:
+                                        tts = gTTS(text=content, lang='en')
+                                        tts.save(audio_tmp.name)
+                                        zipf.write(audio_tmp.name, f"chapter_{i+1}.mp3")
+                                        os.remove(audio_tmp.name)
+
+                            with open(tmp.name, "rb") as f:
+                                st.download_button("⬇️ Download ZIP", f.read(), "narrativax_book.zip")
+                            os.remove(tmp.name)
+                    except Exception as e:
+                        st.error(f"Export failed: {escape(str(e))[:200]}...")
+    except Exception as e:
+        st.error(f"Sidebar Error: {escape(str(e))[:200]}...")
+
+def display_content():
+    try:
+        if st.session_state.book:
+            st.header("Your Generated Book")
+            
+            with st.expander("📔 Book Cover", expanded=True):
+                if st.session_state.cover:
+                    st.image(st.session_state.cover, use_container_width=True)
+                else:
+                    st.warning("No cover generated yet")
+            
+            with st.expander("📝 Full Outline"):
+                st.markdown(f"```\n{escape(st.session_state.outline)}\n```")
+            
+            with st.expander("👥 Character Bios"):
+                for char in st.session_state.characters:
+                    with st.container():
+                        cols = st.columns([1, 3])
+                        cols[0].subheader(escape(char.get('name', 'Unnamed')))
+                        cols[1].write(f"""
+                        **Role:** {escape(char.get('role', 'Unknown'))}  
+                        **Personality:** {escape(char.get('personality', 'N/A'))}  
+                        **Appearance:** {escape(char.get('appearance', 'Not specified'))}
+                        """)
+
+            for section, content in st.session_state.book.items():
+                with st.expander(f"📜 {escape(section)}"):
+                    col1, col2 = st.columns([3, 2])
+                    with col1:
+                        st.write(escape(content))
+                        with NamedTemporaryFile(suffix=".mp3") as tf:
+                            tts = gTTS(text=content, lang='en')
+                            tts.save(tf.name)
+                            st.audio(tf.name, format="audio/mp3")
+                    with col2:
+                        if section in st.session_state.image_cache:
+                            img = st.session_state.image_cache[section]
+                            if isinstance(img, str):
+                                img = base64_to_pil(img)
+                            st.image(img, use_container_width=True)
+                        else:
+                            st.warning("No image for this section")
+    except Exception as e:
+        st.error(f"Content Error: {escape(str(e))[:200]}...")
+
 # ========== MAIN EXECUTION ==========
 if __name__ == "__main__":
     main_interface()
-    progress_animation()
+    render_sidebar()
+    display_content()
     st.markdown("""
     <style>
         @media (max-width: 768px) {
