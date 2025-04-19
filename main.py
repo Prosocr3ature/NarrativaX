@@ -8,6 +8,7 @@ import threading
 import queue
 import base64
 import time
+from html import escape
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from docx import Document
 from docx.shared import Inches
@@ -34,7 +35,7 @@ IMAGE_SIZE = (768, 1024)
 PROGRESS_QUEUE = queue.Queue()
 TIMEOUT = 300  # 5 minutes
 
-LOADING_MESSAGES = [
+SAFE_LOADING_MESSAGES = [
     "Sharpening quills...", "Mixing metaphorical ink...",
     "Convincing characters to behave...", "Battling clichés...",
     "Negotiating with plot holes...", "Summoning muses...",
@@ -117,7 +118,7 @@ def generate_image(prompt: str, model_key: str, id_key: str) -> Image.Image:
         output = replicate.run(
             IMAGE_MODELS[model_key],
             input={
-                "prompt": f"{prompt[:250]} {random.choice(['intricate details', 'cinematic lighting', '8k resolution'])}",
+                "prompt": f"{escape(prompt[:250])} {random.choice(['intricate details', 'cinematic lighting', '8k resolution'])}",
                 "negative_prompt": "text, watermark, deformed, blurry",
                 "num_inference_steps": 35,
                 "width": IMAGE_SIZE[0],
@@ -141,7 +142,6 @@ def background_generation_task():
         total_steps = 4 + (config['chapters'] * 3)
         current_step = 0
 
-        # Heartbeat mechanism
         def heartbeat():
             while st.session_state.gen_progress:
                 PROGRESS_QUEUE.put(("💓", "Processing...", current_step/total_steps, ""))
@@ -154,7 +154,7 @@ def background_generation_task():
         # Phase 1: Concept Development
         PROGRESS_QUEUE.put(("🌌", "Developing core concept...", current_step/total_steps, ""))
         premise = call_openrouter(
-            f"Develop a {config['genre']} story premise: {config['prompt']}",
+            f"Develop a {config['genre']} story premise: {escape(config['prompt'])}",
             config['model']
         )
         current_step += 1
@@ -180,7 +180,7 @@ def background_generation_task():
             current_step += 1
 
             PROGRESS_QUEUE.put(("🎨", f"Generating {sec} image...", current_step/total_steps, ""))
-            generate_image(f"{content[:200]} {TONE_MAP[config['tone']]} style", config['img_model'], sec)
+            generate_image(f"{escape(content[:200])} {TONE_MAP[config['tone']]} style", config['img_model'], sec)
             current_step += 1
 
         # Phase 4: Final Assets
@@ -220,6 +220,7 @@ def background_generation_wrapper():
 
 # ========== UI COMPONENTS ==========
 def dramatic_logo():
+    safe_message = escape(random.choice(SAFE_LOADING_MESSAGES))
     st.markdown(f"""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500&family=Cinzel:wght@500&display=swap');
@@ -275,203 +276,226 @@ def dramatic_logo():
     <div class="logo-overlay"></div>
     <div class="logo-container">
         <img class="logo-img" src="{LOGO_URL}">
-        <div class="loading-message">{random.choice(LOADING_MESSAGES)}</div>
+        <div class="loading-message">{safe_message}</div>
     </div>
     """, unsafe_allow_html=True)
 
 def progress_animation():
-    if not PROGRESS_QUEUE.empty():
-        status = PROGRESS_QUEUE.get()
-        
-        with st.empty() as container:
-            while True:
-                if status[0] == "COMPLETE":
-                    st.balloons()
-                    st.session_state.gen_progress = None
-                    break
-                elif status[0] == "ERROR":
-                    st.error(f"🚨 {status[1]}")
-                    st.session_state.gen_progress = None
-                    break
-                else:
-                    emoji, message, progress, preview = status
-                    container.markdown(f"""
-                    <div style="text-align: center; padding: 2rem">
-                        <div style="font-size: 3rem; animation: pulse 1.5s infinite">{emoji}</div>
-                        <h3 style="margin: 1rem 0">{message}</h3>
-                        <progress class="progress-bar" value="{progress}" max="1"></progress>
-                        {f'<div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 1rem; margin: 1rem 0">{preview}...</div>' if preview else ''}
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                try:
-                    status = PROGRESS_QUEUE.get(timeout=0.1)
-                except queue.Empty:
-                    break
+    try:
+        if not PROGRESS_QUEUE.empty():
+            status = PROGRESS_QUEUE.get()
+            
+            with st.empty() as container:
+                while True:
+                    if status[0] == "COMPLETE":
+                        st.balloons()
+                        st.session_state.gen_progress = None
+                        break
+                    elif status[0] == "ERROR":
+                        st.error(f"🚨 {escape(str(status[1]))[:200]}...")
+                        st.session_state.gen_progress = None
+                        break
+                    else:
+                        emoji, message, progress, preview = status
+                        safe_preview = escape(str(preview))[:150] + "..." if preview else ""
+                        container.markdown(f"""
+                        <div style="text-align: center; padding: 2rem">
+                            <div style="font-size: 3rem; animation: pulse 1.5s infinite">{emoji}</div>
+                            <h3 style="margin: 1rem 0">{escape(message)}</h3>
+                            <progress class="progress-bar" value="{progress}" max="1"></progress>
+                            {f'<div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 1rem; margin: 1rem 0">{safe_preview}</div>' if preview else ''}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    try:
+                        status = PROGRESS_QUEUE.get(timeout=0.1)
+                    except queue.Empty:
+                        break
+    except Exception as e:
+        st.error(f"Animation Error: {escape(str(e))[:200]}...")
+        st.session_state.gen_progress = None
 
 def main_interface():
-    if st.session_state.get('gen_progress'):
-        dramatic_logo()
-        progress_animation()
-        
-        # Force periodic UI refresh
-        time.sleep(0.1)
-        st.experimental_rerun()
-    else:
-        st.markdown(f'<img src="{LOGO_URL}" width="300" style="float:right; margin:-50px -20px 0 0">', unsafe_allow_html=True)
-        st.title("NarrativaX — Immersive AI Book Creator")
-        
-        with st.container():
-            prompt = st.text_area("🖋️ Your Story Concept", height=120,
-                                placeholder="A forbidden romance between...")
-            col1, col2, col3 = st.columns(3)
-            genre = col1.selectbox("📖 Genre", GENRES)
-            tone = col2.selectbox("🎨 Tone", list(TONE_MAP))
-            chapters = col3.slider("📚 Chapters", 4, 30, 10)
-            model = col1.selectbox("🤖 AI Model", ["nothingiisreal/mn-celeste-12b", "gryphe/mythomax-l2-13b"])
-            img_model = col2.selectbox("🖼️ Image Model", list(IMAGE_MODELS))
+    try:
+        if st.session_state.get('gen_progress'):
+            dramatic_logo()
+            progress_animation()
+            
+            time.sleep(0.1)
+            st.experimental_rerun()
+        else:
+            st.markdown(f'<img src="{escape(LOGO_URL)}" width="300" style="float:right; margin:-50px -20px 0 0">', 
+                      unsafe_allow_html=True)
+            st.title("NarrativaX — Immersive AI Book Creator")
+            
+            with st.container():
+                prompt = st.text_area("🖋️ Your Story Concept", height=120,
+                                    placeholder="A forbidden romance between...")
+                col1, col2, col3 = st.columns(3)
+                genre = col1.selectbox("📖 Genre", GENRES)
+                tone = col2.selectbox("🎨 Tone", list(TONE_MAP))
+                chapters = col3.slider("📚 Chapters", 4, 30, 10)
+                model = col1.selectbox("🤖 AI Model", ["nothingiisreal/mn-celeste-12b", "gryphe/mythomax-l2-13b"])
+                img_model = col2.selectbox("🖼️ Image Model", list(IMAGE_MODELS))
 
-            if st.button("🚀 Create Book", use_container_width=True):
-                st.session_state.gen_progress = {
-                    "prompt": prompt, "genre": genre, "tone": tone,
-                    "chapters": chapters, "model": model, "img_model": img_model
-                }
-                gen_thread = threading.Thread(target=background_generation_wrapper, daemon=True)
-                add_script_run_ctx(gen_thread)
-                gen_thread.start()
-                st.rerun()
+                if st.button("🚀 Create Book", use_container_width=True):
+                    st.session_state.image_cache.clear()
+                    st.session_state.cover = None
+                    st.session_state.book = None
+                    st.session_state.outline = None
+                    st.session_state.characters = None
+                    
+                    st.session_state.gen_progress = {
+                        "prompt": prompt, "genre": genre, "tone": tone,
+                        "chapters": chapters, "model": model, "img_model": img_model
+                    }
+                    gen_thread = threading.Thread(target=background_generation_wrapper, daemon=True)
+                    add_script_run_ctx(gen_thread)
+                    gen_thread.start()
+                    st.rerun()
+                    
+    except Exception as e:
+        st.error(f"Application Error: {escape(str(e))[:200]}...")
+        st.session_state.gen_progress = None
+        st.stop()
 
 def render_sidebar():
-    with st.sidebar:
-        st.markdown(f'<img src="{LOGO_URL}" width="200" style="margin-bottom:20px">', unsafe_allow_html=True)
-        
-        if st.button("💾 Save Project"):
-            try:
-                save_data = {
-                    'book': st.session_state.book,
-                    'outline': st.session_state.outline,
-                    'characters': st.session_state.characters,
-                    'image_cache': st.session_state.image_cache,
-                    'cover': pil_to_base64(st.session_state.cover) if st.session_state.cover else None
-                }
-                with open("session.narrx", "w") as f:
-                    json.dump(save_data, f)
-                st.success("Project saved!")
-            except Exception as e:
-                st.error(f"Save failed: {str(e)}")
-
-        if st.button("📂 Load Project"):
-            try:
-                with open("session.narrx", "r") as f:
-                    data = json.load(f)
-                
-                st.session_state.book = data.get('book')
-                st.session_state.outline = data.get('outline')
-                st.session_state.characters = data.get('characters')
-                st.session_state.image_cache = {
-                    k: base64_to_pil(v) if isinstance(v, str) else v 
-                    for k, v in data.get('image_cache', {}).items()
-                }
-                if data.get('cover'):
-                    st.session_state.cover = base64_to_pil(data['cover'])
-                st.success("Project loaded!")
-            except Exception as e:
-                st.error(f"Load failed: {str(e)}")
-
-        if st.session_state.book and st.button("📦 Export Book"):
-            with st.spinner("Packaging your masterpiece..."):
+    try:
+        with st.sidebar:
+            st.markdown(f'<img src="{escape(LOGO_URL)}" width="200" style="margin-bottom:20px">', unsafe_allow_html=True)
+            
+            if st.button("💾 Save Project"):
                 try:
-                    with NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-                        with zipfile.ZipFile(tmp.name, 'w') as zipf:
-                            # DOCX
-                            doc = Document()
-                            for sec, content in st.session_state.book.items():
-                                doc.add_heading(sec, level=1)
-                                doc.add_paragraph(content)
-                                if sec in st.session_state.image_cache:
-                                    img = st.session_state.image_cache[sec]
-                                    if isinstance(img, str):
-                                        img = base64_to_pil(img)
-                                    img_io = BytesIO()
-                                    img.save(img_io, format='PNG')
-                                    doc.add_picture(img_io, width=Inches(5))
-                            doc.save("book.docx")
-                            zipf.write("book.docx")
-                            os.remove("book.docx")
-
-                            # PDF
-                            pdf = FPDF()
-                            pdf.set_auto_page_break(auto=True, margin=15)
-                            if st.session_state.cover:
-                                cover_path = "cover.png"
-                                st.session_state.cover.save(cover_path)
-                                pdf.image(cover_path, x=0, y=0, w=pdf.w, h=pdf.h)
-                                pdf.add_page()
-                            pdf.set_font("Arial", size=12)
-                            for sec, content in st.session_state.book.items():
-                                pdf.set_font("Arial", 'B', 16)
-                                pdf.cell(0, 10, sec, ln=True)
-                                pdf.set_font("Arial", size=12)
-                                pdf.multi_cell(0, 10, content)
-                            pdf.output("book.pdf")
-                            zipf.write("book.pdf")
-                            os.remove("book.pdf")
-
-                            # Audio
-                            for i, (sec, content) in enumerate(st.session_state.book.items()):
-                                with NamedTemporaryFile(delete=False, suffix=".mp3") as audio_tmp:
-                                    tts = gTTS(text=content, lang='en')
-                                    tts.save(audio_tmp.name)
-                                    zipf.write(audio_tmp.name, f"chapter_{i+1}.mp3")
-                                    os.remove(audio_tmp.name)
-
-                        with open(tmp.name, "rb") as f:
-                            st.download_button("⬇️ Download ZIP", f.read(), "narrativax_book.zip")
-                        os.remove(tmp.name)
+                    save_data = {
+                        'book': st.session_state.book,
+                        'outline': st.session_state.outline,
+                        'characters': st.session_state.characters,
+                        'image_cache': st.session_state.image_cache,
+                        'cover': pil_to_base64(st.session_state.cover) if st.session_state.cover else None
+                    }
+                    with open("session.narrx", "w") as f:
+                        json.dump(save_data, f)
+                    st.success("Project saved!")
                 except Exception as e:
-                    st.error(f"Export failed: {str(e)}")
+                    st.error(f"Save failed: {escape(str(e))[:200]}...")
+
+            if st.button("📂 Load Project"):
+                try:
+                    with open("session.narrx", "r") as f:
+                        data = json.load(f)
+                    
+                    st.session_state.book = data.get('book')
+                    st.session_state.outline = data.get('outline')
+                    st.session_state.characters = data.get('characters')
+                    st.session_state.image_cache = {
+                        k: base64_to_pil(v) if isinstance(v, str) else v 
+                        for k, v in data.get('image_cache', {}).items()
+                    }
+                    if data.get('cover'):
+                        st.session_state.cover = base64_to_pil(data['cover'])
+                    st.success("Project loaded!")
+                except Exception as e:
+                    st.error(f"Load failed: {escape(str(e))[:200]}...")
+
+            if st.session_state.book and st.button("📦 Export Book"):
+                with st.spinner("Packaging your masterpiece..."):
+                    try:
+                        with NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+                            with zipfile.ZipFile(tmp.name, 'w') as zipf:
+                                # DOCX
+                                doc = Document()
+                                for sec, content in st.session_state.book.items():
+                                    doc.add_heading(sec, level=1)
+                                    doc.add_paragraph(content)
+                                    if sec in st.session_state.image_cache:
+                                        img = st.session_state.image_cache[sec]
+                                        if isinstance(img, str):
+                                            img = base64_to_pil(img)
+                                        img_io = BytesIO()
+                                        img.save(img_io, format='PNG')
+                                        doc.add_picture(img_io, width=Inches(5))
+                                doc.save("book.docx")
+                                zipf.write("book.docx")
+                                os.remove("book.docx")
+
+                                # PDF
+                                pdf = FPDF()
+                                pdf.set_auto_page_break(auto=True, margin=15)
+                                if st.session_state.cover:
+                                    cover_path = "cover.png"
+                                    st.session_state.cover.save(cover_path)
+                                    pdf.image(cover_path, x=0, y=0, w=pdf.w, h=pdf.h)
+                                    pdf.add_page()
+                                pdf.set_font("Arial", size=12)
+                                for sec, content in st.session_state.book.items():
+                                    pdf.set_font("Arial", 'B', 16)
+                                    pdf.cell(0, 10, sec, ln=True)
+                                    pdf.set_font("Arial", size=12)
+                                    pdf.multi_cell(0, 10, content)
+                                pdf.output("book.pdf")
+                                zipf.write("book.pdf")
+                                os.remove("book.pdf")
+
+                                # Audio
+                                for i, (sec, content) in enumerate(st.session_state.book.items()):
+                                    with NamedTemporaryFile(delete=False, suffix=".mp3") as audio_tmp:
+                                        tts = gTTS(text=content, lang='en')
+                                        tts.save(audio_tmp.name)
+                                        zipf.write(audio_tmp.name, f"chapter_{i+1}.mp3")
+                                        os.remove(audio_tmp.name)
+
+                            with open(tmp.name, "rb") as f:
+                                st.download_button("⬇️ Download ZIP", f.read(), "narrativax_book.zip")
+                            os.remove(tmp.name)
+                    except Exception as e:
+                        st.error(f"Export failed: {escape(str(e))[:200]}...")
+    except Exception as e:
+        st.error(f"Sidebar Error: {escape(str(e))[:200]}...")
 
 def display_content():
-    if st.session_state.book:
-        st.header("Your Generated Book")
-        
-        with st.expander("📔 Book Cover", expanded=True):
-            if st.session_state.cover:
-                st.image(st.session_state.cover, use_container_width=True)
-            else:
-                st.warning("No cover generated yet")
-        
-        with st.expander("📝 Full Outline"):
-            st.markdown(f"```\n{st.session_state.outline}\n```")
-        
-        with st.expander("👥 Character Bios"):
-            for char in st.session_state.characters:
-                with st.container():
-                    cols = st.columns([1, 3])
-                    cols[0].subheader(char.get('name', 'Unnamed'))
-                    cols[1].write(f"""
-                    **Role:** {char.get('role', 'Unknown')}  
-                    **Personality:** {char.get('personality', 'N/A')}  
-                    **Appearance:** {char.get('appearance', 'Not specified')}
-                    """)
+    try:
+        if st.session_state.book:
+            st.header("Your Generated Book")
+            
+            with st.expander("📔 Book Cover", expanded=True):
+                if st.session_state.cover:
+                    st.image(st.session_state.cover, use_container_width=True)
+                else:
+                    st.warning("No cover generated yet")
+            
+            with st.expander("📝 Full Outline"):
+                st.markdown(f"```\n{escape(st.session_state.outline)}\n```")
+            
+            with st.expander("👥 Character Bios"):
+                for char in st.session_state.characters:
+                    with st.container():
+                        cols = st.columns([1, 3])
+                        cols[0].subheader(escape(char.get('name', 'Unnamed')))
+                        cols[1].write(f"""
+                        **Role:** {escape(char.get('role', 'Unknown'))}  
+                        **Personality:** {escape(char.get('personality', 'N/A'))}  
+                        **Appearance:** {escape(char.get('appearance', 'Not specified'))}
+                        """)
 
-        for section, content in st.session_state.book.items():
-            with st.expander(f"📜 {section}"):
-                col1, col2 = st.columns([3, 2])
-                with col1:
-                    st.write(content)
-                    with NamedTemporaryFile(suffix=".mp3") as tf:
-                        tts = gTTS(text=content, lang='en')
-                        tts.save(tf.name)
-                        st.audio(tf.name, format="audio/mp3")
-                with col2:
-                    if section in st.session_state.image_cache:
-                        img = st.session_state.image_cache[section]
-                        if isinstance(img, str):
-                            img = base64_to_pil(img)
-                        st.image(img, use_container_width=True)
-                    else:
-                        st.warning("No image for this section")
+            for section, content in st.session_state.book.items():
+                with st.expander(f"📜 {escape(section)}"):
+                    col1, col2 = st.columns([3, 2])
+                    with col1:
+                        st.write(escape(content))
+                        with NamedTemporaryFile(suffix=".mp3") as tf:
+                            tts = gTTS(text=content, lang='en')
+                            tts.save(tf.name)
+                            st.audio(tf.name, format="audio/mp3")
+                    with col2:
+                        if section in st.session_state.image_cache:
+                            img = st.session_state.image_cache[section]
+                            if isinstance(img, str):
+                                img = base64_to_pil(img)
+                            st.image(img, use_container_width=True)
+                        else:
+                            st.warning("No image for this section")
+    except Exception as e:
+        st.error(f"Content Error: {escape(str(e))[:200]}...")
 
 # ========== MAIN EXECUTION ==========
 if __name__ == "__main__":
