@@ -1,4 +1,4 @@
-# main.py - NarrativaX (Production-Ready Version with Fixes)
+# main.py - NarrativaX (Unicode Fix Version)
 import os
 import json
 import requests
@@ -190,9 +190,9 @@ def generate_book_content():
         current_step += 1
         progress_bar.progress(current_step/total_steps, text="🗂️ Generating outline...")
         outline_prompt = (
-            f"Write non-fiction outline for {genre} book. Prompt: {config['prompt']}. Tone: {TONE_MAP[config['tone']]}."
+            f"Write non-fiction outline for {genre} book. Prompt: {config['prompt']}. Tone: {TONE_MAP[config['tone']}."
             if is_dev else
-            f"Create fictional outline for {TONE_MAP[config['tone']]} {genre} story. Include plot points and character arcs."
+            f"Create fictional outline for {TONE_MAP[config['tone']} {genre} story. Include plot points and character arcs."
         )
         st.session_state.outline = call_openrouter(outline_prompt, config['model'])
         if not st.session_state.outline:
@@ -220,7 +220,7 @@ def generate_book_content():
                 current_step += 1
                 progress_bar.progress(current_step/total_steps, text=f"🖼️ Creating image for Chapter {chapter_num}")
                 generate_image(
-                    f"{content[:200]} {TONE_MAP[config['tone']]}",
+                    f"{content[:200]} {TONE_MAP[config['tone']}",
                     config["img_model"],
                     f"chapter_{chapter_num}"
                 )
@@ -248,15 +248,28 @@ def generate_book_content():
 def create_export_zip():
     with NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
         with zipfile.ZipFile(tmp.name, 'w') as zipf:
-            # PDF Export
+            # PDF Export with Unicode Fix
             pdf = FPDF()
             pdf.add_page()
-            pdf.set_font("Helvetica", size=12)
-            pdf.cell(200, 10, text=st.session_state.gen_progress.get('prompt', 'Untitled'), 
-                    new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             
+            # Configure Unicode settings
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.set_doc_option('core_fonts_encoding', 'utf-8')
+            
+            # Use built-in font with Unicode normalization
+            pdf.set_font("helvetica", size=12)
+            
+            # Add title with encoding handling
+            title = st.session_state.gen_progress.get('prompt', 'Untitled')
+            pdf.cell(200, 10, 
+                   text=pdf.normalize_text(title), 
+                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            
+            # Add chapters with text normalization
             for chapter, text in st.session_state.book.items():
-                pdf.multi_cell(w=pdf.epw, h=10, text=f"{chapter}\n\n{text}")
+                normalized_text = pdf.normalize_text(f"{chapter}\n\n{text}")
+                pdf.multi_cell(w=pdf.epw, h=10, text=normalized_text)
+                pdf.ln(5)
             
             pdf_path = "book.pdf"
             pdf.output(pdf_path)
