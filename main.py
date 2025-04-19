@@ -1,48 +1,42 @@
+# START OF FILE
+# main.py
+
 import os
 import json
 import requests
 import zipfile
-import random
-import replicate
-import threading
-import queue
 import base64
+import threading
 import time
+import queue
+import replicate
+import random
+from io import BytesIO
+from PIL import Image
+from tempfile import NamedTemporaryFile
 from html import escape
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from docx import Document
 from docx.shared import Inches
 from fpdf import FPDF
-from tempfile import NamedTemporaryFile
+from ebooklib import epub
 from gtts import gTTS
-from PIL import Image
-from io import BytesIO
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import streamlit as st
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 
-# ========== INITIALIZATION ==========
-st.set_page_config(
-    page_title="NarrativaX", 
-    page_icon="🪶", 
-    layout="wide", 
-    initial_sidebar_state="collapsed"
-)
+# ========== CONFIG ==========
+st.set_page_config(page_title="NarrativaX", page_icon="🪶", layout="wide")
 
-# ========== CONSTANTS ==========
 LOGO_URL = "https://raw.githubusercontent.com/Prosocr3ature/NarrativaX/main/logo.png"
 MAX_TOKENS = 1800
 IMAGE_SIZE = (768, 1024)
 PROGRESS_QUEUE = queue.Queue()
-TIMEOUT = 300  # 5 minutes
+TIMEOUT = 600
 
-SAFE_LOADING_MESSAGES = [
-    "Sharpening quills...", "Mixing metaphorical ink...",
-    "Convincing characters to behave...", "Battling clichés...",
-    "Negotiating with plot holes...", "Summoning muses...",
-    "Where we're going, we don't need chapters...",
-    "Wordsmithing in progress...", "The pen is mightier... loading...",
-    "Subverting expectations..."
-]
+LANGS = {
+    "English": "en", "Swedish": "sv", "French": "fr",
+    "German": "de", "Spanish": "es", "Japanese": "ja"
+}
 
 TONE_MAP = {
     "Romantic": "sensual, romantic, literary",
@@ -59,86 +53,150 @@ TONE_MAP = {
     "Philosophical": "deep, reflective, thoughtful"
 }
 
-GENRES = [
-    "Adventure", "Fantasy", "Dark Fantasy", "Romance", "Thriller",
-    "Mystery", "Drama", "Sci-Fi", "Slice of Life", "Horror", "Crime",
-    "LGBTQ+", "Action", "Psychological", "Historical Fiction",
-    "Supernatural", "Steampunk", "Cyberpunk", "Post-Apocalyptic",
-    "Surreal", "Noir", "Erotica", "NSFW", "Hardcore", "BDSM",
-    "Futanari", "Incubus/Succubus", "Monster Romance",
-    "Dubious Consent", "Voyeurism", "Yaoi", "Yuri", "Taboo Fantasy"
-]
+GENRES = ["Fantasy", "Romance", "Thriller", "Sci-Fi", "NSFW", "Dark Fantasy"]
 
 IMAGE_MODELS = {
-    "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
-    "Reliberate V3 (NSFW)": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29"
+    "Realistic Vision": "lucataco/realistic-vision-v5.1:2c8e954...",
+    "Reliberate V3": "asiryan/reliberate-v3:d70438fc..."
 }
 
-# ========== SESSION STATE ==========
-for key in ['book', 'outline', 'cover', 'characters', 'gen_progress']:
+for key in ['book', 'outline', 'cover', 'characters', 'gen_progress', 'lang']:
     st.session_state.setdefault(key, None)
+
 st.session_state.setdefault('image_cache', {})
 
-def render_ui():
-    st.markdown(
-        f"""
-        <style>
-            .main-container {{ padding: 1rem; }}
-            .header-title {{ font-size: 2.5rem; font-weight: 700; color: #ff69b4; }}
-            .subtitle {{ font-size: 1.1rem; color: #ccc; margin-top: -10px; }}
-            @media (max-width: 768px) {{
-                .header-title {{ font-size: 1.8rem; }}
-                .subtitle {{ font-size: 1rem; }}
-                .stTextArea textarea {{ font-size: 16px !important; }}
-            }}
-        </style>
-        <div class='main-container'>
-            <div class='header-title'>NarrativaX</div>
-            <div class='subtitle'>Immersive AI Story Generator</div>
-        </div>
-        """,
-        unsafe_allow_html=True
+# ========== UTILITIES ==========
+def pil_to_base64(image: Image.Image) -> str:
+    buffered = BytesIO()
+    image.save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+def base64_to_pil(b64_str: str) -> Image.Image:
+    return Image.open(BytesIO(base64.b64decode(b64_str)))
+
+# ========== LLM CALL ==========
+def call_openrouter(prompt: str, model: str) -> str:
+    headers = {"Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"}
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.95,
+        "max_tokens": MAX_TOKENS
+    }
+    res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
+    return res.json()["choices"][0]["message"]["content"].strip()
+
+# ========== IMAGE ==========
+def generate_image(prompt: str, model_key: str, id_key: str) -> Image.Image:
+    if id_key in st.session_state.image_cache:
+        cached = st.session_state.image_cache[id_key]
+        return base64_to_pil(cached) if isinstance(cached, str) else cached
+
+    output = replicate.run(
+        IMAGE_MODELS[model_key],
+        input={
+            "prompt": prompt,
+            "width": IMAGE_SIZE[0], "height": IMAGE_SIZE[1],
+            "num_inference_steps": 30, "guidance_scale": 7.5
+        }
     )
+    if output and isinstance(output, list):
+        response = requests.get(output[0])
+        image = Image.open(BytesIO(response.content)).convert("RGB")
+        st.session_state.image_cache[id_key] = pil_to_base64(image)
+        return image
+    return None
 
-    st.markdown("""---""")
+# ========== GENERATION ==========
+def background_generation():
+    config = st.session_state.gen_progress
+    total = 3 + config['chapters'] * 2
+    current = 0
 
-    prompt = st.text_area("Enter your story concept:", placeholder="e.g. A forbidden romance between a vampire and a hunter in a post-apocalyptic city...", height=120)
+    outline = call_openrouter(
+        f"Write a detailed outline for a {config['tone']} {config['genre']} novel: {config['prompt']}",
+        config['model']
+    ); current += 1
+    st.session_state.outline = outline
+    book = {}
 
-    col1, col2, col3 = st.columns(3)
+    sections = [f"Chapter {i+1}" for i in range(config['chapters'])]
+    for sec in sections:
+        text = call_openrouter(f"Write {sec} based on outline: {outline}", config['model'])
+        book[sec] = text; current += 1
+        generate_image(text[:300], config['img_model'], sec); current += 1
+
+    st.session_state.cover = generate_image(f"Cover for {config['prompt']}", config['img_model'], "cover")
+    st.session_state.book = book
+
+    st.session_state.characters = json.loads(call_openrouter(
+        f"Generate characters in JSON list for {config['genre']}: {outline}", config['model']
+    ))
+    st.session_state.outline = outline
+    PROGRESS_QUEUE.put(("DONE",))
+
+# ========== UI ==========
+def main():
+    st.image(LOGO_URL, width=200)
+    st.title("NarrativaX")
+
+    mode = st.radio("Mode", ["Classic", "Wizard"])
+    prompt = st.text_area("Story idea:")
+    col1, col2 = st.columns(2)
     genre = col1.selectbox("Genre", GENRES)
-    tone = col2.selectbox("Narrative Tone", list(TONE_MAP.keys()))
-    chapters = col3.slider("Number of Chapters", 4, 30, 10)
+    tone = col2.selectbox("Tone", list(TONE_MAP))
+    chapters = st.slider("Chapters", 3, 20, 6)
+    model = col1.selectbox("Model", ["nothingiisreal/mn-celeste-12b", "gryphe/mythomax-l2-13b"])
+    img_model = col2.selectbox("Image Model", list(IMAGE_MODELS))
+    lang = st.selectbox("Language", list(LANGS.keys()))
 
-    model = col1.selectbox("Text AI Model", ["nothingiisreal/mn-celeste-12b", "gryphe/mythomax-l2-13b"])
-    img_model = col2.selectbox("Image AI Model", list(IMAGE_MODELS))
-
-    if st.button("Generate Book", use_container_width=True):
-        if not prompt.strip():
-            st.warning("Please enter a story prompt to begin.")
-            return
-
-        st.session_state.image_cache.clear()
-        st.session_state.cover = None
-        st.session_state.book = None
-        st.session_state.outline = None
-        st.session_state.characters = None
-
+    if st.button("Generate"):
         st.session_state.gen_progress = {
             "prompt": prompt, "genre": genre, "tone": tone,
             "chapters": chapters, "model": model, "img_model": img_model
         }
-
-        gen_thread = threading.Thread(target=background_generation_wrapper, daemon=True)
-        add_script_run_ctx(gen_thread)
-        gen_thread.start()
+        st.session_state.lang = LANGS[lang]
+        t = threading.Thread(target=background_generation)
+        add_script_run_ctx(t); t.start()
         st.rerun()
 
-# MAIN LOGIK
+    if st.session_state.book:
+        st.success("Book generated!")
+        st.image(st.session_state.cover)
+        st.markdown(f"### Outline\n```
+{st.session_state.outline}```")
+        for k, v in st.session_state.book.items():
+            with st.expander(k):
+                st.write(v)
+                tts = gTTS(text=v, lang=st.session_state.lang)
+                tmp = NamedTemporaryFile(delete=False, suffix=".mp3")
+                tts.save(tmp.name)
+                st.audio(tmp.name)
+                img = st.session_state.image_cache.get(k)
+                if img:
+                    st.image(base64_to_pil(img) if isinstance(img, str) else img)
+
+        if st.button("Export EPUB"):
+            book = epub.EpubBook()
+            book.set_title("NarrativaX Book")
+            book.set_language(st.session_state.lang)
+
+            chapters = []
+            for title, content in st.session_state.book.items():
+                ch = epub.EpubHtml(title=title, file_name=f"{title}.xhtml", lang=st.session_state.lang)
+                ch.content = f"<h1>{title}</h1><p>{content}</p>"
+                book.add_item(ch)
+                chapters.append(ch)
+            book.toc = tuple(chapters)
+            book.add_item(epub.EpubNcx())
+            book.add_item(epub.EpubNav())
+            book.spine = ['nav'] + chapters
+
+            tmp = NamedTemporaryFile(delete=False, suffix=".epub")
+            epub.write_epub(tmp.name, book)
+            with open(tmp.name, "rb") as f:
+                st.download_button("📘 Download EPUB", f.read(), file_name="narrativax.epub")
+
 if __name__ == "__main__":
-    if st.session_state.get("gen_progress"):
-        dramatic_logo()
-        progress_animation()
-    else:
-        render_ui()
-        render_sidebar()
-        display_content()
+    main()
+# END OF FILE
