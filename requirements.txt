@@ -1,6 +1,6 @@
-streamlit==1.33.0
+streamlit==1.32.2
 requests==2.31.0
-replicate==0.24.0
+replicate==0.23.1
 gTTS==2.5.1
 fpdf==1.7.2
 python-docx==1.1.0
