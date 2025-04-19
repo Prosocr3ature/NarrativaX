@@ -1,4 +1,4 @@
-# main.py - NarrativaX (Production-Ready Version)
+# main.py - NarrativaX (Production-Ready Version with Fixes)
 import os
 import json
 import requests
@@ -12,14 +12,16 @@ from html import escape
 from docx import Document
 from docx.shared import Inches
 from fpdf import FPDF
+from fpdf.enums import XPos, YPos
 from tempfile import NamedTemporaryFile
 from gtts import gTTS
 from PIL import Image
 from io import BytesIO
 import streamlit as st
 
-# Suppress Streamlit warnings
-warnings.filterwarnings("ignore", category=UserWarning, message="Missing ScriptRunContext")
+# Suppress warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="streamlit")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="fpdf")
 
 # === INITIALIZATION ===
 st.set_page_config(
@@ -65,8 +67,8 @@ GENRES = [
 ]
 
 IMAGE_MODELS = {
-    "Realistic Vision v5.1": "stability-ai/sdxl:c221b2b8ef527988fb59bf24a8b97c4561f1c671f73bd389f866bfb27c061316",
-    "Reliberate V3 (NSFW)": "cjwbw/deliberate:0d0d2a8d5abf0e98e2b21b4725b19e2a0d052a31f9b5d15d9d4c8ddf47e1cdaa"
+    "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
+    "Reliberate V3 (NSFW)": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29"
 }
 
 # === SESSION STATE ===
@@ -89,10 +91,7 @@ def load_logo():
     try:
         with open("logo.png", "rb") as f:
             return base64.b64encode(f.read()).decode()
-    except FileNotFoundError:
-        return None
-    except Exception as e:
-        st.error(f"Logo Error: {str(e)}")
+    except Exception:
         return None
 
 LOGO_DATA = load_logo()
@@ -126,10 +125,7 @@ def call_openrouter(prompt, model):
             json=payload,
             timeout=30
         )
-        
-        if response.status_code != 200:
-            raise Exception(f"API Error {response.status_code}: {response.text}")
-            
+        response.raise_for_status()
         return response.json()['choices'][0]['message']['content']
     except Exception as e:
         st.error(f"API Error: {str(e)}")
@@ -137,12 +133,14 @@ def call_openrouter(prompt, model):
 
 def generate_image(prompt, model_name, section):
     try:
+        model_version = IMAGE_MODELS[model_name]
         output = replicate.run(
-            IMAGE_MODELS[model_name],
+            model_version,
             input={
                 "prompt": f"{prompt} [Style: {TONE_MAP[st.session_state.gen_progress['tone']]}]",
                 "width": IMAGE_SIZE[0],
-                "height": IMAGE_SIZE[1]
+                "height": IMAGE_SIZE[1],
+                "negative_prompt": "text, watermark" if "NSFW" in model_name else ""
             }
         )
         
@@ -157,6 +155,12 @@ def generate_image(prompt, model_name, section):
         st.session_state.image_cache[section] = image
         return image
         
+    except replicate.exceptions.ModelError as e:
+        st.error(f"Model Error: {str(e)}")
+        return None
+    except requests.exceptions.HTTPError as e:
+        st.error(f"HTTP Error: {e.response.status_code} - {e.response.text}")
+        return None
     except Exception as e:
         st.error(f"Image Generation Failed: {str(e)}")
         return None
@@ -208,7 +212,7 @@ def generate_book_content():
             )
             content = call_openrouter(chapter_prompt, config['model'])
             if not content:
-                continue  # Skip failed chapters
+                continue
                 
             book[f"Chapter {chapter_num}"] = content
             
@@ -247,10 +251,13 @@ def create_export_zip():
             # PDF Export
             pdf = FPDF()
             pdf.add_page()
-            pdf.set_font("Arial", size=12)
-            pdf.cell(200, 10, txt=st.session_state.gen_progress.get('prompt', 'Untitled'), ln=True)
+            pdf.set_font("Helvetica", size=12)
+            pdf.cell(200, 10, text=st.session_state.gen_progress.get('prompt', 'Untitled'), 
+                    new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            
             for chapter, text in st.session_state.book.items():
-                pdf.multi_cell(0, 10, txt=f"{chapter}\n\n{text}")
+                pdf.multi_cell(w=pdf.epw, h=10, text=f"{chapter}\n\n{text}")
+            
             pdf_path = "book.pdf"
             pdf.output(pdf_path)
             zipf.write(pdf_path)
