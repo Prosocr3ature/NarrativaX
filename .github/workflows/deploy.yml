@@ -1,0 +1,13 @@
+name: Deploy NarrativaX
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -r requirements.txt
+      - uses: streamlit/streamlit-cloud-deploy@v1.0.0
+        with:
+          streamlitToken: ${{ secrets.STREAMLIT_TOKEN }}
