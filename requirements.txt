@@ -1,7 +1,9 @@
-streamlit==1.18.1
-requests==2.28.1
-replicate==0.4.3
-gTTS==2.2.3
-Pillow==9.0.1
-python-docx==0.8.11
+streamlit==1.19.0
+requests==2.28.2
+replicate==0.2.1
+pillow==9.2.0
+Pillow-SIMD==6.0.1.post2
+docx==0.8.11
 fpdf==1.7.2
+gTTS==2.2.3
+concurrent.futures==3.1.1
