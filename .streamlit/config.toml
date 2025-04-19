@@ -7,3 +7,6 @@ enableCORS = false
 base="dark"
 primaryColor="#ff69b4"
 font="serif"
+
+[logger]
+level = "info"
