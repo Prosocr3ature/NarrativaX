@@ -1,3 +1,5 @@
+# main.py — NarrativaX Full App (Modern GUI + Mobile-Friendly)
+
 import os
 import json
 import requests
@@ -20,250 +22,188 @@ from io import BytesIO
 import streamlit as st
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 
-# Simplified setup to only demonstrate the final display_content() function
-st.set_page_config(page_title="NarrativaX", page_icon="🪶", layout="wide")
+# === Page Config ===
+st.set_page_config(
+    page_title="NarrativaX", 
+    page_icon="🩶", 
+    layout="wide", 
+    initial_sidebar_state="collapsed"
+)
 
-def pil_to_base64(image: Image.Image) -> str:
-    buffered = BytesIO()
-    image.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode("utf-8")
+# === Constants ===
+LOGO_URL = "https://raw.githubusercontent.com/Prosocr3ature/NarrativaX/main/logo.png"
+MAX_TOKENS = 1800
+IMAGE_SIZE = (768, 1024)
+PROGRESS_QUEUE = queue.Queue()
+TIMEOUT = 300
 
-def base64_to_pil(b64_str: str) -> Image.Image:
-    return Image.open(BytesIO(base64.b64decode(b64_str)))
+TONE_MAP = {
+    "Romantic": "sensual, romantic, literary",
+    "Dark Romantic": "moody, passionate, emotional",
+    "NSFW": "detailed erotic, emotional, mature",
+    "Hardcore": "intense, vulgar, graphic, pornographic",
+    "BDSM": "dominant, submissive, explicit, power-play",
+    "Playful": "flirty, teasing, lighthearted",
+    "Mystical": "dreamlike, surreal, poetic",
+    "Gritty": "raw, realistic, street-style",
+    "Slow Burn": "subtle, growing tension, emotional depth",
+    "Wholesome": "uplifting, warm, feel-good",
+    "Suspenseful": "tense, thrilling, page-turning",
+    "Philosophical": "deep, reflective, thoughtful"
+}
 
-def display_content():
+GENRES = [
+    "Adventure", "Fantasy", "Dark Fantasy", "Romance", "Thriller",
+    "Mystery", "Drama", "Sci-Fi", "Slice of Life", "Horror", "Crime",
+    "LGBTQ+", "Action", "Psychological", "Historical Fiction",
+    "Supernatural", "Steampunk", "Cyberpunk", "Post-Apocalyptic",
+    "Surreal", "Noir", "Erotica", "NSFW", "Hardcore", "BDSM",
+    "Futanari", "Incubus/Succubus", "Monster Romance",
+    "Dubious Consent", "Voyeurism", "Yaoi", "Yuri", "Taboo Fantasy"
+]
+
+IMAGE_MODELS = {
+    "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
+    "Reliberate V3 (NSFW)": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29"
+}
+
+# === Session Init ===
+for key in ["book", "outline", "cover", "characters", "gen_progress"]:
+    st.session_state.setdefault(key, None)
+st.session_state.setdefault("image_cache", {})
+
+# === Core Functions ===
+def pil_to_base64(image):
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode()
+
+def base64_to_pil(b64):
+    return Image.open(BytesIO(base64.b64decode(b64)))
+
+def call_openrouter(prompt, model):
+    headers = {"Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"}
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.95,
+        "max_tokens": MAX_TOKENS
+    }
     try:
-        if st.session_state.book:
-            st.header("📖 Your Generated Book")
-
-            # Cover
-            with st.expander("📔 Book Cover", expanded=True):
-                if st.session_state.cover:
-                    st.image(st.session_state.cover, use_container_width=True)
-                else:
-                    st.warning("No cover image available.")
-
-            # Outline
-            with st.expander("📝 Full Outline", expanded=False):
-                if st.session_state.outline:
-                    st.code(st.session_state.outline, language="markdown")
-                else:
-                    st.warning("No outline available.")
-
-            # Characters
-            with st.expander("👥 Character Bios", expanded=False):
-                if st.session_state.characters:
-                    for char in st.session_state.characters:
-                        with st.container():
-                            cols = st.columns([1, 3])
-                            cols[0].subheader(escape(char.get("name", "Unnamed")))
-                            cols[1].markdown(f"""
-                                **Role:** {escape(char.get('role', 'Unknown'))}  
-                                **Personality:** {escape(char.get('personality', 'N/A'))}  
-                                **Appearance:** {escape(char.get('appearance', 'Not specified'))}
-                            """)
-                else:
-                    st.warning("No characters available.")
-
-            # Sections
-            for section, content in st.session_state.book.items():
-                with st.expander(f"📜 {escape(section)}", expanded=False):
-                    col1, col2 = st.columns([3, 2])
-                    with col1:
-                        st.markdown(f"##### {escape(section)}")
-                        st.write(escape(content))
-
-                        # Audio playback
-                        with NamedTemporaryFile(suffix=".mp3") as tf:
-                            tts = gTTS(text=content, lang='en')
-                            tts.save(tf.name)
-                            st.audio(tf.name, format="audio/mp3")
-
-                    with col2:
-                        img = st.session_state.image_cache.get(section)
-                        if img:
-                            if isinstance(img, str):
-                                img = base64_to_pil(img)
-                            st.image(img, use_container_width=True)
-                        else:
-                            st.warning("No image for this section.")
+        res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60)
+        res.raise_for_status()
+        return res.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        st.error(f"⚠️ Content Error: {escape(str(e))[:200]}...")
+        PROGRESS_QUEUE.put(("ERROR", f"API Error: {str(e)}", 0, ""))
+        raise
 
-# Dummy session state for standalone testing (remove for production)
-st.session_state.book = {"Foreword": "This is the foreword text.", "Chapter 1": "Once upon a time..."}
-st.session_state.outline = "This is a sample outline for your story."
-st.session_state.cover = None
-st.session_state.characters = [{"name": "Alice", "role": "Protagonist", "personality": "Brave", "appearance": "Tall with red hair."}]
-st.session_state.image_cache = {}
+def generate_image(prompt, model_key, id_key):
+    if id_key in st.session_state.image_cache:
+        cached = st.session_state.image_cache[id_key]
+        return base64_to_pil(cached) if isinstance(cached, str) else cached
 
-display_content()
-def main_interface():
+    output = replicate.run(
+        IMAGE_MODELS[model_key],
+        input={
+            "prompt": f"{escape(prompt[:250])} cinematic lighting, intricate, 8k",
+            "negative_prompt": "text, watermark, blurry",
+            "num_inference_steps": 35,
+            "width": IMAGE_SIZE[0],
+            "height": IMAGE_SIZE[1]
+        }
+    )
+    if output and isinstance(output, list):
+        response = requests.get(output[0], timeout=30)
+        image = Image.open(BytesIO(response.content)).convert("RGB")
+        st.session_state.image_cache[id_key] = pil_to_base64(image)
+        return image
+    return None
+
+# === Background Thread ===
+def background_generation_task():
     try:
-        st.title("NarrativaX — Immersive AI Book Creator")
-        st.markdown("Let your imagination take the lead...")
+        config = st.session_state.gen_progress
+        total_steps = 4 + (config['chapters'] * 3)
+        current_step = 0
 
-        with st.container():
-            prompt = st.text_area("🖋️ Your Story Concept", height=120,
-                                  placeholder="A forbidden romance between a vampire and a demon lord...")
-            col1, col2, col3 = st.columns(3)
-            genre = col1.selectbox("📖 Genre", GENRES)
-            tone = col2.selectbox("🎨 Tone", list(TONE_MAP))
-            chapters = col3.slider("📚 Chapters", 4, 30, 10)
-            model = col1.selectbox("🤖 AI Model", ["nothingiisreal/mn-celeste-12b", "gryphe/mythomax-l2-13b"])
-            img_model = col2.selectbox("🖼️ Image Model", list(IMAGE_MODELS))
+        book = {}
+        premise = call_openrouter(f"Develop a {config['genre']} story premise: {escape(config['prompt'])}", config['model'])
+        current_step += 1
+        PROGRESS_QUEUE.put(("🌌", "Developed premise", current_step/total_steps, premise))
 
-            if st.button("🚀 Create Book", use_container_width=True):
-                st.session_state.image_cache.clear()
-                st.session_state.cover = None
-                st.session_state.book = None
-                st.session_state.outline = None
-                st.session_state.characters = None
+        outline = call_openrouter(f"Create detailed outline for {TONE_MAP[config['tone']]} {config['genre']} novel: {premise}", config['model'])
+        st.session_state.outline = outline
+        current_step += 1
+        PROGRESS_QUEUE.put(("📜", "Outline ready", current_step/total_steps, outline[:150]))
 
-                st.session_state.gen_progress = {
-                    "prompt": prompt, "genre": genre, "tone": tone,
-                    "chapters": chapters, "model": model, "img_model": img_model
-                }
+        sections = ["Foreword"] + [f"Chapter {i+1}" for i in range(config['chapters'])] + ["Epilogue"]
+        for sec in sections:
+            text = call_openrouter(f"Write {sec} for novel: {outline}", config['model'])
+            book[sec] = text
+            current_step += 1
+            PROGRESS_QUEUE.put(("✍️", f"{sec} written", current_step/total_steps, text[:150]))
+            generate_image(f"{escape(text[:200])} {TONE_MAP[config['tone']]}", config['img_model'], sec)
+            current_step += 1
 
-                gen_thread = threading.Thread(target=background_generation_wrapper, daemon=True)
-                add_script_run_ctx(gen_thread)
-                gen_thread.start()
-                st.rerun()
+        st.session_state.cover = generate_image(f"Cinematic book cover for: {premise}", config['img_model'], "cover")
+        current_step += 1
+
+        characters = call_openrouter(f"List characters for novel as JSON: {outline}", config['model'])
+        st.session_state.characters = json.loads(characters)
+        current_step += 1
+
+        st.session_state.book = book
+        PROGRESS_QUEUE.put(("COMPLETE", "Book complete", 1.0, ""))
 
     except Exception as e:
-        st.error(f"Application Error: {escape(str(e))[:200]}...")
+        PROGRESS_QUEUE.put(("ERROR", f"Generation error: {str(e)}", 0, ""))
         st.session_state.gen_progress = None
-        st.stop()
 
-def render_sidebar():
-    try:
-        with st.sidebar:
-            st.image(LOGO_URL, width=200)
+# === Interface ===
+def main():
+    st.image(LOGO_URL, width=160)
+    st.title("NarrativaX — AI Book Creator")
 
-            if st.button("💾 Save Project"):
-                try:
-                    save_data = {
-                        'book': st.session_state.book,
-                        'outline': st.session_state.outline,
-                        'characters': st.session_state.characters,
-                        'image_cache': st.session_state.image_cache,
-                        'cover': pil_to_base64(st.session_state.cover) if st.session_state.cover else None
-                    }
-                    with open("session.narrx", "w") as f:
-                        json.dump(save_data, f)
-                    st.success("Project saved!")
-                except Exception as e:
-                    st.error(f"Save failed: {escape(str(e))[:200]}...")
+    prompt = st.text_area("Describe your story idea", height=120)
+    col1, col2, col3 = st.columns(3)
+    genre = col1.selectbox("Genre", GENRES)
+    tone = col2.selectbox("Tone", list(TONE_MAP))
+    chapters = col3.slider("Chapters", 4, 30, 10)
+    model = col1.selectbox("AI Model", ["nothingiisreal/mn-celeste-12b", "gryphe/mythomax-l2-13b"])
+    img_model = col2.selectbox("Image Model", list(IMAGE_MODELS))
 
-            if st.button("📂 Load Project"):
-                try:
-                    with open("session.narrx", "r") as f:
-                        data = json.load(f)
-                    st.session_state.book = data.get('book')
-                    st.session_state.outline = data.get('outline')
-                    st.session_state.characters = data.get('characters')
-                    st.session_state.image_cache = {
-                        k: base64_to_pil(v) if isinstance(v, str) else v
-                        for k, v in data.get('image_cache', {}).items()
-                    }
-                    if data.get('cover'):
-                        st.session_state.cover = base64_to_pil(data['cover'])
-                    st.success("Project loaded!")
-                except Exception as e:
-                    st.error(f"Load failed: {escape(str(e))[:200]}...")
+    if st.button("Create Book"):
+        st.session_state.gen_progress = {
+            "prompt": prompt, "genre": genre, "tone": tone,
+            "chapters": chapters, "model": model, "img_model": img_model
+        }
+        thread = threading.Thread(target=background_generation_task)
+        add_script_run_ctx(thread)
+        thread.start()
+        st.rerun()
 
-    except Exception as e:
-        st.error(f"Sidebar Error: {escape(str(e))[:200]}...")
+    if st.session_state.get("book"):
+        st.subheader("Cover")
+        if st.session_state.cover:
+            st.image(st.session_state.cover, use_container_width=True)
 
-def display_content():
-    try:
-        if st.session_state.book:
-            st.header("Your Generated Book")
+        st.subheader("Outline")
+        st.markdown(f"```
+{st.session_state.outline}
+```")
 
-            if st.session_state.cover:
-                st.image(st.session_state.cover, caption="Book Cover", use_container_width=True)
+        st.subheader("Characters")
+        for c in st.session_state.characters:
+            st.markdown(f"**{c['name']}** — {c['role']}, *{c['personality']}*\n> {c['appearance']}")
 
-            st.markdown("### Outline\n```\n" + escape(st.session_state.outline) + "\n```")
+        for sec, content in st.session_state.book.items():
+            st.markdown(f"### {sec}")
+            st.write(content)
+            if sec in st.session_state.image_cache:
+                img = st.session_state.image_cache[sec]
+                if isinstance(img, str):
+                    img = base64_to_pil(img)
+                st.image(img, use_container_width=True)
 
-            st.markdown("### Characters")
-            for char in st.session_state.characters:
-                st.markdown(f"""
-                **{escape(char.get('name', 'Unnamed'))}**  
-                *Role:* {escape(char.get('role', 'Unknown'))}  
-                *Personality:* {escape(char.get('personality', 'N/A'))}  
-                *Appearance:* {escape(char.get('appearance', 'Not specified'))}
-                """)
-
-            for section, content in st.session_state.book.items():
-                with st.expander(f"📜 {escape(section)}"):
-                    col1, col2 = st.columns([3, 2])
-                    with col1:
-                        st.write(escape(content))
-                        with NamedTemporaryFile(suffix=".mp3") as tf:
-                            tts = gTTS(text=content, lang='en')
-                            tts.save(tf.name)
-                            st.audio(tf.name, format="audio/mp3")
-                    with col2:
-                        if section in st.session_state.image_cache:
-                            img = st.session_state.image_cache[section]
-                            if isinstance(img, str):
-                                img = base64_to_pil(img)
-                            st.image(img, use_container_width=True)
-                        else:
-                            st.warning("No image for this section")
-    except Exception as e:
-        st.error(f"Display Error: {escape(str(e))[:200]}...")
-
-def progress_animation():
-    try:
-        if not PROGRESS_QUEUE.empty():
-            status = PROGRESS_QUEUE.get()
-            with st.empty() as container:
-                while True:
-                    if status[0] == "COMPLETE":
-                        st.success("Done!")
-                        st.balloons()
-                        break
-                    elif status[0] == "ERROR":
-                        st.error(f"🚨 {escape(str(status[1]))[:200]}...")
-                        break
-                    else:
-                        emoji, message, progress, preview = status
-                        safe_preview = escape(str(preview))[:150] + "..." if preview else ""
-                        container.markdown(f"""
-                            <div style="text-align: center; padding: 2rem">
-                                <div style="font-size: 3rem">{emoji}</div>
-                                <h3>{escape(message)}</h3>
-                                <progress value="{progress}" max="1" style="width: 100%; height: 10px"></progress>
-                                {f"<div style='margin-top:1em;'>{safe_preview}</div>" if preview else ""}
-                            </div>
-                        """, unsafe_allow_html=True)
-                    try:
-                        status = PROGRESS_QUEUE.get(timeout=0.1)
-                    except queue.Empty:
-                        break
-    except Exception as e:
-        st.error(f"Animation Error: {escape(str(e))[:200]}...")
-
-# ========== ENTRY POINT ==========
 if __name__ == "__main__":
-    if st.session_state.get("gen_progress"):
-        dramatic_logo()
-        progress_animation()
-        time.sleep(0.1)
-        st.experimental_rerun()
-    else:
-        main_interface()
-        render_sidebar()
-        display_content()
-
-    st.markdown("""
-    <style>
-        .stTextArea textarea {
-            font-size: 16px !important;
-        }
-        .stProgress > div > div > div {
-            background-color: #ff69b4 !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
+    main()
