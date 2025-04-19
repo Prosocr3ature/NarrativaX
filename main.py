@@ -19,19 +19,11 @@ from PIL import Image
 from io import BytesIO
 import streamlit as st
 
-# Suppress warnings
-warnings.filterwarnings("ignore", category=UserWarning, module="streamlit")
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="fpdf")
-
-# === INITIALIZATION ===
-st.set_page_config(
-    page_title="NarrativaX",
-    page_icon="🪶",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
 # === CONSTANTS ===
+FONT_PATHS = {
+    "regular": "fonts/NotoSans-Regular.ttf",
+    "bold": "fonts/NotoSans-Bold.ttf"
+}
 MAX_TOKENS = 1800
 IMAGE_SIZE = (768, 1024)
 SAFE_LOADING_MESSAGES = [
@@ -101,6 +93,37 @@ if LOGO_DATA:
         <img src="data:image/png;base64,{LOGO_DATA}" width="300" style="filter: drop-shadow(0 0 15px #ff69b4);">
     </div>
     """, unsafe_allow_html=True)
+
+# === FONT HANDLING ===
+class PDFStyler(FPDF):
+    def __init__(self):
+        super().__init__()
+        self.font_configured = False
+    
+    def header(self):
+        if self.font_configured:
+            self.set_font('NotoSansB', '', 12)
+            self.cell(0, 10, 'NarrativaX Generated Book', 0, 1, 'C')
+    
+    def footer(self):
+        if self.font_configured:
+            self.set_y(-15)
+            self.set_font('NotoSans', '', 8)
+            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+def verify_fonts():
+    """Validate required font files exist"""
+    missing = []
+    for font_type, path in FONT_PATHS.items():
+        if not os.path.exists(path):
+            missing.append(path)
+    
+    if missing:
+        raise FileNotFoundError(
+            f"Missing critical font files: {', '.join(missing)}\n"
+            "Ensure the 'fonts' directory exists with these files: "
+            "NotoSans-Regular.ttf and NotoSans-Bold.ttf"
+        )
 
 # === API INTEGRATIONS ===
 def call_openrouter(prompt, model):
@@ -246,54 +269,85 @@ def generate_book_content():
 
 # === EXPORT FUNCTIONALITY ===
 def create_export_zip():
-    with NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-        with zipfile.ZipFile(tmp.name, 'w') as zipf:
-            # PDF Export
-            pdf = FPDF()
-            pdf.add_page()
-            
-            # Add Unicode fonts (ensure fonts are in your project)
-            pdf.add_font('NotoSans', '', 'NotoSans-Regular.ttf', uni=True)
-            pdf.add_font('NotoSansB', 'B', 'NotoSans-Bold.ttf', uni=True)
-            
-            # Set font as default
-            pdf.set_font("NotoSans", size=12)
-            
-            # Title
-            title = st.session_state.gen_progress.get('prompt', 'Untitled')
-            pdf.set_font("NotoSansB", size=16)
-            pdf.cell(200, 10, text=title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            pdf.ln(10)
-            
-            # Content
-            pdf.set_font("NotoSans", size=12)
-            for chapter, text in st.session_state.book.items():
-                pdf.multi_cell(w=pdf.epw, h=10, text=f"{chapter}\n\n{text}")
-                pdf.ln(5)
-            
-            # DOCX Export
-            doc = Document()
-            doc.add_heading(title, 0)
-            for chapter, text in st.session_state.book.items():
-                doc.add_heading(chapter, level=1)
-                doc.add_paragraph(text)
-            docx_path = "book.docx"
-            doc.save(docx_path)
-            zipf.write(docx_path)
-            os.remove(docx_path)
-            
-            # MP3 Export
-            for idx, (chapter, text) in enumerate(st.session_state.book.items()):
-                tts = gTTS(text=text, lang='en')
-                mp3_path = f"chapter_{idx+1}.mp3"
-                tts.save(mp3_path)
-                zipf.write(mp3_path)
-                os.remove(mp3_path)
+    try:
+        verify_fonts()
         
+        with NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+            with zipfile.ZipFile(tmp.name, 'w') as zipf:
+                # PDF Export
+                pdf = PDFStyler()
+                pdf.add_page()
+                
+                # Configure fonts
+                try:
+                    pdf.add_font('NotoSans', '', FONT_PATHS["regular"], uni=True)
+                    pdf.add_font('NotoSansB', 'B', FONT_PATHS["bold"], uni=True)
+                    pdf.font_configured = True
+                except Exception as e:
+                    st.error(f"Font initialization failed: {str(e)}")
+                    pdf.font_configured = False
+                    raise
+
+                # Title
+                title = st.session_state.gen_progress.get('prompt', 'Untitled')
+                pdf.set_font("NotoSansB", size=16)
+                pdf.cell(200, 10, text=title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.ln(10)
+
+                # Content
+                pdf.set_font("NotoSans", size=12)
+                for chapter, text in st.session_state.book.items():
+                    pdf.set_font("NotoSansB", size=14)
+                    pdf.multi_cell(w=pdf.epw, h=10, text=chapter)
+                    pdf.ln(2)
+                    pdf.set_font("NotoSans", size=12)
+                    pdf.multi_cell(w=pdf.epw, h=10, text=text)
+                    pdf.ln(8)
+
+                pdf_path = "book.pdf"
+                pdf.output(pdf_path)
+                zipf.write(pdf_path)
+                os.remove(pdf_path)
+
+                # DOCX Export
+                doc = Document()
+                doc.add_heading(title, 0)
+                for chapter, text in st.session_state.book.items():
+                    doc.add_heading(chapter, level=1)
+                    doc.add_paragraph(text)
+                docx_path = "book.docx"
+                doc.save(docx_path)
+                zipf.write(docx_path)
+                os.remove(docx_path)
+
+                # MP3 Export
+                for idx, (chapter, text) in enumerate(st.session_state.book.items()):
+                    tts = gTTS(text=text, lang='en')
+                    mp3_path = f"chapter_{idx+1}.mp3"
+                    tts.save(mp3_path)
+                    zipf.write(mp3_path)
+                    os.remove(mp3_path)
+
         return tmp.name
+
+    except FileNotFoundError as e:
+        st.error(f"Critical file missing: {str(e)}")
+        raise
+    except Exception as e:
+        st.error(f"Export failed: {str(e)}")
+        raise
 
 # === MAIN INTERFACE ===
 def main_interface():
+    try:
+        verify_fonts()
+    except FileNotFoundError as e:
+        st.error("""
+            System configuration error. Missing font files.
+            Please contact support.
+        """)
+        st.stop()
+
     st.title("NarrativaX — AI-Powered Book Creator")
     
     with st.form("book_form"):
