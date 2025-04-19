@@ -1,6 +1,3 @@
-
-# main.py - Kompletta versionen av NarrativaX
-
 import os
 import json
 import requests
