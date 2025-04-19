@@ -7,4 +7,8 @@ python-docx==0.8.11
 fpdf==1.7.2
 ebooklib==0.17.1
 beautifulsoup4==4.10.0
-html5lib==1.1
+lxml==4.6.4
+rich>=10.14.0
+markdown-it-py>=2.2.0
+pygments<3.0.0,>=2.13.0
+mdurl~=0.1
