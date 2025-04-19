@@ -252,26 +252,24 @@ def create_export_zip():
             pdf = FPDF()
             pdf.add_page()
             
-            # Add Unicode fonts
-            pdf.add_font('NotoSans', '', 'fonts/NotoSans-Regular.ttf', uni=True)
-            pdf.add_font('NotoSansB', 'B', 'fonts/NotoSans-Bold.ttf', uni=True)
+            # Add Unicode fonts (ensure fonts are in your project)
+            pdf.add_font('NotoSans', '', 'NotoSans-Regular.ttf', uni=True)
+            pdf.add_font('NotoSansB', 'B', 'NotoSans-Bold.ttf', uni=True)
             
-            # Set font
+            # Set font as default
             pdf.set_font("NotoSans", size=12)
             
             # Title
             title = st.session_state.gen_progress.get('prompt', 'Untitled')
+            pdf.set_font("NotoSansB", size=16)
             pdf.cell(200, 10, text=title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(10)
             
             # Content
+            pdf.set_font("NotoSans", size=12)
             for chapter, text in st.session_state.book.items():
                 pdf.multi_cell(w=pdf.epw, h=10, text=f"{chapter}\n\n{text}")
                 pdf.ln(5)
-            
-            pdf_path = "book.pdf"
-            pdf.output(pdf_path)
-            zipf.write(pdf_path)
-            os.remove(pdf_path)
             
             # DOCX Export
             doc = Document()
