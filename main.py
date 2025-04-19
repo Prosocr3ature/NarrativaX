@@ -1,4 +1,4 @@
-# main.py - NarrativaX (Complete Enhanced Version)
+# main.py - NarrativaX (Production-Ready Version)
 import os
 import json
 import requests
@@ -7,6 +7,7 @@ import random
 import replicate
 import base64
 import time
+import warnings
 from html import escape
 from docx import Document
 from docx.shared import Inches
@@ -16,6 +17,9 @@ from gtts import gTTS
 from PIL import Image
 from io import BytesIO
 import streamlit as st
+
+# Suppress Streamlit warnings
+warnings.filterwarnings("ignore", category=UserWarning, message="Missing ScriptRunContext")
 
 # === INITIALIZATION ===
 st.set_page_config(
@@ -66,15 +70,27 @@ IMAGE_MODELS = {
 }
 
 # === SESSION STATE ===
-for key in ['book', 'outline', 'cover', 'characters', 'gen_progress']:
-    st.session_state.setdefault(key, None)
-st.session_state.setdefault('image_cache', {})
+for key in ['book', 'outline', 'cover', 'characters', 'gen_progress', 'image_cache']:
+    st.session_state.setdefault(key, {} if key == 'image_cache' else None)
 
-# === CENTERED LOGO ===
+# === API CONFIGURATION ===
+def validate_api_keys():
+    required_keys = ['OPENROUTER_API_KEY', 'REPLICATE_API_TOKEN']
+    missing = [key for key in required_keys if key not in st.secrets]
+    if missing:
+        st.error(f"Missing API keys in secrets: {', '.join(missing)}")
+        st.stop()
+
+validate_api_keys()
+os.environ["REPLICATE_API_TOKEN"] = st.secrets["REPLICATE_API_TOKEN"]
+
+# === LOGO HANDLING ===
 def load_logo():
     try:
         with open("logo.png", "rb") as f:
             return base64.b64encode(f.read()).decode()
+    except FileNotFoundError:
+        return None
     except Exception as e:
         st.error(f"Logo Error: {str(e)}")
         return None
@@ -107,8 +123,13 @@ def call_openrouter(prompt, model):
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
-            json=payload
+            json=payload,
+            timeout=30
         )
+        
+        if response.status_code != 200:
+            raise Exception(f"API Error {response.status_code}: {response.text}")
+            
         return response.json()['choices'][0]['message']['content']
     except Exception as e:
         st.error(f"API Error: {str(e)}")
@@ -118,12 +139,24 @@ def generate_image(prompt, model_name, section):
     try:
         output = replicate.run(
             IMAGE_MODELS[model_name],
-            input={"prompt": f"{prompt} [Style: {TONE_MAP[st.session_state.gen_progress['tone']]}"}
+            input={
+                "prompt": f"{prompt} [Style: {TONE_MAP[st.session_state.gen_progress['tone']]}]",
+                "width": IMAGE_SIZE[0],
+                "height": IMAGE_SIZE[1]
+            }
         )
-        image_url = output[0]
-        image = Image.open(requests.get(image_url, stream=True).raw)
+        
+        if not output:
+            raise Exception("No image generated")
+            
+        image_url = output[0] if isinstance(output, list) else output
+        response = requests.get(image_url, timeout=15)
+        response.raise_for_status()
+        
+        image = Image.open(BytesIO(response.content))
         st.session_state.image_cache[section] = image
         return image
+        
     except Exception as e:
         st.error(f"Image Generation Failed: {str(e)}")
         return None
@@ -146,37 +179,36 @@ def generate_book_content():
             f"Develop a {genre} book idea: {escape(config['prompt'])}",
             config['model']
         )
+        if not premise:
+            raise Exception("Failed to generate premise")
         
         # Outline Generation
         current_step += 1
         progress_bar.progress(current_step/total_steps, text="🗂️ Generating outline...")
-        if is_dev:
-            st.session_state.outline = call_openrouter(
-                f"Write non-fiction outline for {genre} book. Prompt: {config['prompt']}. Tone: {TONE_MAP[config['tone']]}.",
-                config['model']
-            )
-        else:
-            st.session_state.outline = call_openrouter(
-                f"Create fictional outline for {TONE_MAP[config['tone']]} {genre} story. Include plot points and character arcs.",
-                config['model']
-            )
+        outline_prompt = (
+            f"Write non-fiction outline for {genre} book. Prompt: {config['prompt']}. Tone: {TONE_MAP[config['tone']]}."
+            if is_dev else
+            f"Create fictional outline for {TONE_MAP[config['tone']]} {genre} story. Include plot points and character arcs."
+        )
+        st.session_state.outline = call_openrouter(outline_prompt, config['model'])
+        if not st.session_state.outline:
+            raise Exception("Failed to generate outline")
         
         # Chapter Generation
         book = {}
         for chapter_num in range(1, config['chapters'] + 1):
             current_step += 1
-            progress_bar.progress(current_step/total_steps, text=f"✍️ Writing Chapter {chapter_num}...")
+            progress_text = random.choice(SAFE_LOADING_MESSAGES)
+            progress_bar.progress(current_step/total_steps, text=f"✍️ Writing Chapter {chapter_num}... {progress_text}")
             
-            if is_dev:
-                content = call_openrouter(
-                    f"Write Chapter {chapter_num} for {genre} book. Outline: {st.session_state.outline}",
-                    config['model']
-                )
-            else:
-                content = call_openrouter(
-                    f"Write Chapter {chapter_num} for {genre} story. Outline: {st.session_state.outline}",
-                    config['model']
-                )
+            chapter_prompt = (
+                f"Write Chapter {chapter_num} for {genre} book. Outline: {st.session_state.outline}"
+                if is_dev else
+                f"Write Chapter {chapter_num} for {genre} story. Outline: {st.session_state.outline}"
+            )
+            content = call_openrouter(chapter_prompt, config['model'])
+            if not content:
+                continue  # Skip failed chapters
                 
             book[f"Chapter {chapter_num}"] = content
             
@@ -205,44 +237,8 @@ def generate_book_content():
     except Exception as e:
         st.error(f"Generation Failed: {str(e)}")
         progress_bar.progress(0.0, text="❌ Generation aborted")
-
-# === CHARACTER MANAGEMENT ===
-def regenerate_character(char_index):
-    try:
-        new_char = call_openrouter(
-            f"Regenerate character {st.session_state.characters[char_index]['name']} "
-            f"for {st.session_state.gen_progress['genre']} story. Original outline: {st.session_state.outline}",
-            st.session_state.gen_progress['model']
-        )
-        st.session_state.characters[char_index] = json.loads(new_char)
-        st.rerun()
-    except Exception as e:
-        st.error(f"Character regeneration failed: {str(e)}")
-
-def display_characters():
-    st.subheader("👥 Character Management")
-    if not st.session_state.characters:
-        st.warning("No characters available.")
-        return
-
-    new_chars = st.session_state.characters.copy()
-    for i, char in enumerate(st.session_state.characters):
-        with st.expander(f"{char.get('name', 'Unnamed')} - {char.get('role', 'Unknown')}"):
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                st.markdown(f"""
-                    **Name:** {char.get('name', '')}  
-                    **Role:** {char.get('role', '')}  
-                    **Personality:** {char.get('personality', '')}  
-                    **Appearance:** {char.get('appearance', '')}
-                """)
-            with col2:
-                if st.button("♻️ Regenerate", key=f"regen_{i}"):
-                    regenerate_character(i)
-                if st.button("❌ Remove", key=f"remove_{i}"):
-                    del new_chars[i]
-                    st.rerun()
-    st.session_state.characters = new_chars
+    finally:
+        progress_bar.empty()
 
 # === EXPORT FUNCTIONALITY ===
 def create_export_zip():
@@ -252,26 +248,32 @@ def create_export_zip():
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", size=12)
-            pdf.cell(200, 10, txt=st.session_state.book.get('title', 'Untitled'), ln=True)
+            pdf.cell(200, 10, txt=st.session_state.gen_progress.get('prompt', 'Untitled'), ln=True)
             for chapter, text in st.session_state.book.items():
                 pdf.multi_cell(0, 10, txt=f"{chapter}\n\n{text}")
-            pdf.output("book.pdf")
-            zipf.write("book.pdf")
+            pdf_path = "book.pdf"
+            pdf.output(pdf_path)
+            zipf.write(pdf_path)
+            os.remove(pdf_path)
             
             # DOCX Export
             doc = Document()
-            doc.add_heading(st.session_state.book.get('title', 'Untitled'), 0)
+            doc.add_heading(st.session_state.gen_progress.get('prompt', 'Untitled'), 0)
             for chapter, text in st.session_state.book.items():
                 doc.add_heading(chapter, level=1)
                 doc.add_paragraph(text)
-            doc.save("book.docx")
-            zipf.write("book.docx")
+            docx_path = "book.docx"
+            doc.save(docx_path)
+            zipf.write(docx_path)
+            os.remove(docx_path)
             
             # MP3 Export
             for idx, (chapter, text) in enumerate(st.session_state.book.items()):
                 tts = gTTS(text=text, lang='en')
-                tts.save(f"chapter_{idx+1}.mp3")
-                zipf.write(f"chapter_{idx+1}.mp3")
+                mp3_path = f"chapter_{idx+1}.mp3"
+                tts.save(mp3_path)
+                zipf.write(mp3_path)
+                os.remove(mp3_path)
         
         return tmp.name
 
@@ -299,15 +301,19 @@ def main_interface():
             else:
                 st.session_state.image_cache.clear()
                 st.session_state.gen_progress = {
-                    "prompt": prompt, "genre": genre, "tone": tone,
-                    "chapters": chapters, "model": model, "img_model": img_model
+                    "prompt": prompt, 
+                    "genre": genre, 
+                    "tone": tone,
+                    "chapters": chapters, 
+                    "model": model, 
+                    "img_model": img_model
                 }
                 generate_book_content()
 
     if st.session_state.book:
         st.header("📚 Generated Content")
         
-        tabs = st.tabs(["Chapters", "Outline", "Characters", "Export"])
+        tabs = st.tabs(["Chapters", "Outline", "Export"])
         
         with tabs[0]:
             for chapter, content in st.session_state.book.items():
@@ -315,27 +321,29 @@ def main_interface():
                     col1, col2 = st.columns([3, 2])
                     with col1:
                         st.write(content)
-                        tts = gTTS(text=content, lang='en')
-                        with NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
+                        with NamedTemporaryFile(suffix=".mp3") as fp:
+                            tts = gTTS(text=content, lang='en')
                             tts.save(fp.name)
                             st.audio(fp.name)
                     with col2:
-                        if f"chapter_{chapter.split()[-1]}" in st.session_state.image_cache:
-                            st.image(st.session_state.image_cache[f"chapter_{chapter.split()[-1]}"])
+                        image_key = f"chapter_{chapter.split()[-1]}"
+                        if image_key in st.session_state.image_cache:
+                            st.image(st.session_state.image_cache[image_key])
         
         with tabs[1]:
-            st.code(st.session_state.outline)
+            st.markdown("### Book Outline")
+            st.write(st.session_state.outline)
         
         with tabs[2]:
-            display_characters()
-        
-        with tabs[3]:
             st.download_button(
                 label="📥 Download Complete Book",
                 data=open(create_export_zip(), "rb").read(),
                 file_name="narrativax_book.zip",
                 mime="application/zip"
             )
+            if st.button("🧹 Clear Session"):
+                st.session_state.clear()
+                st.rerun()
 
 # === RUN APPLICATION ===
 if __name__ == "__main__":
