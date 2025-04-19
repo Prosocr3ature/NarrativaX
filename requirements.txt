@@ -1,7 +1,8 @@
-streamlit==1.31.1
-requests
-replicate
-gtts
-fpdf
-python-docx
-Pillow
+streamlit==1.32.2
+requests==2.31.0
+Pillow==10.2.0
+gTTS==2.5.1
+python-docx==1.1.0
+fpdf==1.7.2
+replicate==0.23.2
+ebooklib==0.18
