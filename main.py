@@ -7,6 +7,8 @@ import replicate
 import threading
 import queue
 import base64
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from docx import Document
 from docx.shared import Inches
 from fpdf import FPDF
@@ -18,13 +20,19 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 # ========== INITIALIZATION ==========
-st.set_page_config(page_title="NarrativaX", page_icon="🪶", layout="wide")
+st.set_page_config(
+    page_title="NarrativaX", 
+    page_icon="🪶", 
+    layout="wide", 
+    initial_sidebar_state="collapsed"
+)
 
 # ========== CONSTANTS ==========
 LOGO_URL = "https://raw.githubusercontent.com/Prosocr3ature/NarrativaX/main/logo.png"
 MAX_TOKENS = 1800
 IMAGE_SIZE = (768, 1024)
 PROGRESS_QUEUE = queue.Queue()
+TIMEOUT = 300  # 5 minutes
 
 LOADING_MESSAGES = [
     "Sharpening quills...", "Mixing metaphorical ink...",
@@ -133,6 +141,16 @@ def background_generation_task():
         total_steps = 4 + (config['chapters'] * 3)
         current_step = 0
 
+        # Heartbeat mechanism
+        def heartbeat():
+            while st.session_state.gen_progress:
+                PROGRESS_QUEUE.put(("💓", "Processing...", current_step/total_steps, ""))
+                time.sleep(10)
+
+        heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+        add_script_run_ctx(heartbeat_thread)
+        heartbeat_thread.start()
+
         # Phase 1: Concept Development
         PROGRESS_QUEUE.put(("🌌", "Developing core concept...", current_step/total_steps, ""))
         premise = call_openrouter(
@@ -188,6 +206,16 @@ def background_generation_task():
 
     except Exception as e:
         PROGRESS_QUEUE.put(("ERROR", f"Generation failed: {str(e)}", 0, ""))
+        st.session_state.gen_progress = None
+
+def background_generation_wrapper():
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(background_generation_task)
+            future.result(timeout=TIMEOUT)
+    except TimeoutError:
+        PROGRESS_QUEUE.put(("ERROR", "Generation timed out after 5 minutes", 0, ""))
+    finally:
         st.session_state.gen_progress = None
 
 # ========== UI COMPONENTS ==========
@@ -285,6 +313,10 @@ def main_interface():
     if st.session_state.get('gen_progress'):
         dramatic_logo()
         progress_animation()
+        
+        # Force periodic UI refresh
+        time.sleep(0.1)
+        st.experimental_rerun()
     else:
         st.markdown(f'<img src="{LOGO_URL}" width="300" style="float:right; margin:-50px -20px 0 0">', unsafe_allow_html=True)
         st.title("NarrativaX — Immersive AI Book Creator")
@@ -304,7 +336,7 @@ def main_interface():
                     "prompt": prompt, "genre": genre, "tone": tone,
                     "chapters": chapters, "model": model, "img_model": img_model
                 }
-                gen_thread = threading.Thread(target=background_generation_task, daemon=True)
+                gen_thread = threading.Thread(target=background_generation_wrapper, daemon=True)
                 add_script_run_ctx(gen_thread)
                 gen_thread.start()
                 st.rerun()
