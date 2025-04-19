@@ -1,8 +1,7 @@
-streamlit==1.33.0
+streamlit==1.31.1
 requests
-Pillow
-gTTS
-docx
-python-docx
-fpdf
 replicate
+gtts
+fpdf
+python-docx
+Pillow
