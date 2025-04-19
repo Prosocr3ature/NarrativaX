@@ -102,13 +102,13 @@ class PDFStyler(FPDF):
     
     def header(self):
         if self.font_configured:
-            self.set_font('NotoSans', 'B', 12)  # Fixed style parameter
+            self.set_font('NotoSans', 'B', 12)
             self.cell(0, 10, 'NarrativaX Generated Book', 0, 1, 'C')
     
     def footer(self):
         if self.font_configured:
             self.set_y(-15)
-            self.set_font('NotoSans', '', 8)  # Explicit regular style
+            self.set_font('NotoSans', '', 8)
             self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
 def verify_fonts():
@@ -215,7 +215,7 @@ def generate_book_content():
         outline_prompt = (
             f"Write non-fiction outline for {genre} book. Prompt: {config['prompt']}. Tone: {TONE_MAP[config['tone']]}"
             if is_dev else
-            f"Create fictional outline for {TONE_MAP[config['tone']} {genre} story. Include plot points and character arcs."
+            f"Create fictional outline for {TONE_MAP[config['tone']]} {genre} story. Include plot points and character arcs."
         )
         st.session_state.outline = call_openrouter(outline_prompt, config['model'])
         if not st.session_state.outline:
@@ -243,7 +243,7 @@ def generate_book_content():
                 current_step += 1
                 progress_bar.progress(current_step/total_steps, text=f"🖼️ Creating image for Chapter {chapter_num}")
                 generate_image(
-                    f"{content[:200]} {TONE_MAP[config['tone']}",
+                    f"{content[:200]} {TONE_MAP[config['tone']]}",
                     config["img_model"],
                     f"chapter_{chapter_num}"
                 )
@@ -278,7 +278,7 @@ def create_export_zip():
                 pdf = PDFStyler()
                 pdf.add_page()
                 
-                # Configure fonts (fixed registration)
+                # Configure fonts
                 try:
                     pdf.add_font('NotoSans', '', FONT_PATHS["regular"])
                     pdf.add_font('NotoSans', 'B', FONT_PATHS["bold"])
@@ -288,13 +288,13 @@ def create_export_zip():
                     pdf.font_configured = False
                     raise
 
-                # Title (fixed font usage)
+                # Title
                 title = st.session_state.gen_progress.get('prompt', 'Untitled')
                 pdf.set_font("NotoSans", "B", size=16)
                 pdf.cell(200, 10, text=title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.ln(10)
 
-                # Content (fixed chapter headers)
+                # Content
                 pdf.set_font("NotoSans", size=12)
                 for chapter, text in st.session_state.book.items():
                     pdf.set_font("NotoSans", "B", size=14)
