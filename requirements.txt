@@ -1,9 +1,8 @@
-streamlit==1.28.0
-requests==2.31.0
-python-docx==0.8.11
-fpdf2==2.7.5
-gTTS==2.3.2
-Pillow==10.0.1
-replicate==0.11.1
-python-dotenv==1.0.0
-python-multipart==0.0.6
+streamlit>=1.32
+replicate
+python-docx
+fpdf2
+gtts
+pillow
+requests
+python-dotenv
