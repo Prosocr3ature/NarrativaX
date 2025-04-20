@@ -1,4 +1,4 @@
-# main.py - NarrativaX (Enhanced Version)
+# main.py - NarrativaX (Production Ready)
 import os
 import json
 import requests
@@ -33,75 +33,113 @@ SAFE_LOADING_MESSAGES = [
 ]
 
 TONE_MAP = {
-    "General": {
-        "Romantic": "sensual, romantic, literary",
-        "Wholesome": "uplifting, warm, feel-good",
-        "Suspenseful": "tense, thrilling, page-turning",
-        "Philosophical": "deep, reflective, thoughtful",
-        "Motivational": "inspirational, personal growth, powerful",
-        "Educational": "insightful, informative, structured",
-        "Satirical": "humorous, ironic, critical",
-        "Professional": "formal, business-like, articulate"
-    },
-    "Adult": {
-        "Erotic": "explicit, sensual, adult",
-        "Kink-Friendly": "taboo, fetish, experimental",
-        "Dark Romance": "obsessive, possessive, intense",
-        "BDSM": "power dynamics, domination, submission",
-        "Taboo": "forbidden, age-gap, forbidden relationships"
-    }
+    "Romantic": "sensual, romantic, literary",
+    "NSFW": "explicit, erotic, adult",
+    "Wholesome": "uplifting, warm, feel-good",
+    "Suspenseful": "tense, thrilling, page-turning",
+    "Philosophical": "deep, reflective, thoughtful",
+    "Motivational": "inspirational, personal growth, powerful",
+    "Educational": "insightful, informative, structured",
+    "Satirical": "humorous, ironic, critical",
+    "Professional": "formal, business-like, articulate",
+    "Instructive": "clear, structured, motivational",
+    "Authoritative": "firm, knowledgeable, professional",
+    "Conversational": "relatable, friendly, informal",
+    "Reflective": "thoughtful, introspective, wise"
 }
 
-GENRES = {
-    "General": [
-        "Personal Development", "Business", "Memoir", "Self-Help", "Productivity",
-        "Adventure", "Romance", "Sci-Fi", "Mystery", "Fantasy", "Historical Fiction",
-        "Philosophy", "Psychology", "Leadership", "Creativity"
-    ],
-    "Adult": [
-        "Erotica", "Dark Fantasy", "Taboo Romance", "BDSM", "Harem",
-        "Omegaverse", "Paranormal Romance", "Reverse Harem", "Urban Fantasy"
-    ]
-}
+GENRES = [
+    "Personal Development", "Business", "Memoir", "Self-Help", "Productivity",
+    "Adventure", "Romance", "Sci-Fi", "Mystery", "Fantasy", "Horror",
+    "NSFW", "Erotica", "Historical Fiction", "Philosophy", "Psychology",
+    "Self-Discipline", "Time Management", "Wealth Building", "Confidence",
+    "Mindfulness", "Goal Setting", "Stoicism", "Creativity",
+    "Fitness & Health", "Habits", "Social Skills", "Leadership", "Focus",
+    "Decision-Making", "Public Speaking", "Mental Clarity"
+]
 
 IMAGE_MODELS = {
-    "General": {
-        "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb"
-    },
-    "Adult": {
-        "Reliberate V3 (Adult)": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
-        "Uber Realistic Porn Merge URPM 1": "ductridev/uber-realistic-porn-merge-urpm-1:1cca487c3bfe167e987fc3639477cf2cf617747cd38772421241b04d27a113a8"
-    }
+    "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
+    "Reliberate V3 (NSFW)": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
+    "Uber Realistic Porn Merge URPM 1": "ductridev/uber-realistic-porn-merge-urpm-1:1cca487c3bfe167e987fc3639477cf2cf617747cd38772421241b04d27a113a8"
 }
 
-LLM_MODELS = {
-    "General": [
-        "openai/gpt-4",
-        "anthropic/claude-2"
-    ],
-    "Adult": [
-        "nothingiisreal/mn-celeste-12b",
-        "nousresearch/nous-hermes-llama2-13b",
-        "mancer/dolphin-mixtral-8x7b",
-        "migtissera/synthia-70b"
-    ]
-}
+# === SESSION STATE ===
+for key in ['book', 'outline', 'cover', 'characters', 'gen_progress', 'image_cache']:
+    st.session_state.setdefault(key, {} if key == 'image_cache' else None)
 
-# === HELPER FUNCTIONS ===
-def get_content_category(genre):
-    return "Adult" if genre in GENRES["Adult"] else "General"
+# === API CONFIGURATION ===
+def validate_api_keys():
+    required_keys = ['OPENROUTER_API_KEY', 'REPLICATE_API_TOKEN']
+    missing = [key for key in required_keys if key not in st.secrets]
+    if missing:
+        st.error(f"Missing API keys in secrets: {', '.join(missing)}")
+        st.stop()
 
-def call_openrouter(prompt, model_name):
+validate_api_keys()
+os.environ["REPLICATE_API_TOKEN"] = st.secrets["REPLICATE_API_TOKEN"]
+
+# === LOGO HANDLING ===
+def load_logo():
+    try:
+        with open("logo.png", "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except Exception:
+        return None
+
+LOGO_DATA = load_logo()
+if LOGO_DATA:
+    st.markdown(f"""
+    <div style="display: flex; justify-content: center; margin: 2rem 0;">
+        <img src="data:image/png;base64,{LOGO_DATA}" width="300" style="filter: drop-shadow(0 0 15px #ff69b4);">
+    </div>
+    """, unsafe_allow_html=True)
+
+# === FONT HANDLING ===
+class PDFStyler(FPDF):
+    def __init__(self):
+        super().__init__()
+        self.font_configured = False
+    
+    def header(self):
+        if self.font_configured:
+            self.set_font('NotoSansB', '', 12)
+            self.cell(0, 10, 'NarrativaX Generated Book', 0, 1, 'C')
+    
+    def footer(self):
+        if self.font_configured:
+            self.set_y(-15)
+            self.set_font('NotoSans', '', 8)
+            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+def verify_fonts():
+    """Validate required font files exist"""
+    missing = []
+    for font_type, path in FONT_PATHS.items():
+        if not os.path.exists(path):
+            missing.append(path)
+    
+    if missing:
+        raise FileNotFoundError(
+            f"Missing critical font files: {', '.join(missing)}\n"
+            "Ensure the 'fonts' directory exists with these files: "
+            "NotoSans-Regular.ttf and NotoSans-Bold.ttf"
+        )
+
+# === API INTEGRATIONS ===
+def call_openrouter(prompt, model):
     headers = {
         "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://narrativax.com",
+        "X-Title": "NarrativaX Book Generator"
     }
     
     payload = {
-        "model": model_name,
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7,
-        "max_tokens": MAX_TOKENS
+        "max_tokens": MAX_TOKENS,
+        "temperature": 0.7
     }
     
     try:
@@ -109,7 +147,7 @@ def call_openrouter(prompt, model_name):
             "https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
             json=payload,
-            timeout=60
+            timeout=30
         )
         response.raise_for_status()
         return response.json()['choices'][0]['message']['content']
@@ -117,208 +155,266 @@ def call_openrouter(prompt, model_name):
         st.error(f"API Error: {str(e)}")
         return None
 
-def generate_image(prompt, model_id):
+def generate_image(prompt, model_name, section):
     try:
+        model_version = IMAGE_MODELS[model_name]
         output = replicate.run(
-            model_id,
-            input={"prompt": prompt, "width": IMAGE_SIZE[0], "height": IMAGE_SIZE[1]}
+            model_version,
+            input={
+                "prompt": f"{prompt} [Style: {TONE_MAP[st.session_state.gen_progress['tone']]}]",
+                "width": IMAGE_SIZE[0],
+                "height": IMAGE_SIZE[1],
+                "negative_prompt": "text, watermark" if "NSFW" in model_name else ""
+            }
         )
+        
         if not output:
-            return None
+            raise Exception("No image generated")
             
         image_url = output[0] if isinstance(output, list) else output
-        response = requests.get(image_url)
-        return Image.open(BytesIO(response.content))
+        response = requests.get(image_url, timeout=15)
+        response.raise_for_status()
+        
+        image = Image.open(BytesIO(response.content))
+        st.session_state.image_cache[section] = image
+        return image
+        
+    except replicate.exceptions.ModelError as e:
+        st.error(f"Model Error: {str(e)}")
+        return None
+    except requests.exceptions.HTTPError as e:
+        st.error(f"HTTP Error: {e.response.status_code} - {e.response.text}")
+        return None
     except Exception as e:
-        st.error(f"Image Generation Error: {str(e)}")
+        st.error(f"Image Generation Failed: {str(e)}")
         return None
 
-# === CONTENT GENERATION ===
+# === CORE FUNCTIONALITY ===
 def generate_book_content():
     config = st.session_state.gen_progress
-    content_category = get_content_category(config['genre'])
+    genre = config['genre']
+    is_dev = genre in ["Personal Development", "Self-Help", "Productivity"]
+    progress_bar = st.progress(0)
     
-    with st.status("Building Your Masterpiece...", expanded=True) as status:
-        # Generate Cover
-        st.write("🎨 Crafting Cover Art...")
-        cover_prompt = f"Book cover for {config['genre']} story: {config['prompt']}. Style: {TONE_MAP[content_category][config['tone']]}"
-        st.session_state.cover = generate_image(
-            cover_prompt,
-            IMAGE_MODELS[content_category][config['img_model']]
+    try:
+        total_steps = 4 + (config['chapters'] * (2 if is_dev else 3))
+        current_step = 0
+        
+        # Premise Generation
+        current_step += 1
+        progress_bar.progress(current_step/total_steps, text="🌟 Building your book idea...")
+        premise = call_openrouter(
+            f"Develop a {genre} book idea: {escape(config['prompt'])}",
+            config['model']
         )
+        if not premise:
+            raise Exception("Failed to generate premise")
         
-        # Generate Chapters
-        st.session_state.book = {}
-        st.session_state.story_so_far = []
-        progress_bar = st.progress(0)
+        # Outline Generation
+        current_step += 1
+        progress_bar.progress(current_step/total_steps, text="🗂️ Generating outline...")
+        outline_prompt = (
+            f"Write non-fiction outline for {genre} book. Prompt: {config['prompt']}. Tone: {TONE_MAP[config['tone']]}"
+            if is_dev else
+            f"Create fictional outline for {TONE_MAP[config['tone']]} {genre} story. Include plot points and character arcs."
+        )
+        st.session_state.outline = call_openrouter(outline_prompt, config['model'])
+        if not st.session_state.outline:
+            raise Exception("Failed to generate outline")
         
-        for i in range(1, config['chapters'] + 1):
-            status.update(label=f"📝 Writing Chapter {i}/{config['chapters']}")
-            content = generate_chapter(i)
-            if not content:
-                st.error(f"Failed to generate Chapter {i}")
-                return
-                
-            progress_bar.progress(i/config['chapters'])
-            time.sleep(0.5)  # Rate limiting
+        # Chapter Generation
+        book = {}
+        for chapter_num in range(1, config['chapters'] + 1):
+            current_step += 1
+            progress_text = random.choice(SAFE_LOADING_MESSAGES)
+            progress_bar.progress(current_step/total_steps, text=f"✍️ Writing Chapter {chapter_num}... {progress_text}")
             
-        status.update(label="✅ Story Generation Complete!", state="complete")
-
-# === EXPORT FUNCTIONS ===
-def create_docx():
-    doc = Document()
-    doc.add_heading(st.session_state.gen_progress['prompt'], 0)
-    
-    if st.session_state.cover:
-        with NamedTemporaryFile(suffix=".jpg") as temp_file:
-            st.session_state.cover.save(temp_file.name)
-            doc.add_picture(temp_file.name, width=Inches(6))
-    
-    for chapter, content in st.session_state.book.items():
-        doc.add_heading(chapter, level=1)
-        doc.add_paragraph(content)
-    
-    return doc
-
-def create_pdf():
-    pdf = FPDF()
-    pdf.add_font("NotoSans", style="", fname=FONT_PATHS["regular"], uni=True)
-    pdf.add_font("NotoSans", style="B", fname=FONT_PATHS["bold"], uni=True)
-    
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    
-    # Title
-    pdf.set_font("NotoSans", "B", 16)
-    pdf.multi_cell(0, 10, st.session_state.gen_progress['prompt'])
-    pdf.ln(10)
-    
-    # Cover Image
-    if st.session_state.cover:
-        with NamedTemporaryFile(suffix=".jpg") as temp_file:
-            st.session_state.cover.save(temp_file.name)
-            pdf.image(temp_file.name, w=pdf.epw)
-    
-    # Chapters
-    pdf.set_font("NotoSans", "", 12)
-    for chapter, content in st.session_state.book.items():
-        pdf.set_font("", "B", 14)
-        pdf.cell(0, 10, chapter, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.set_font("", "", 12)
-        pdf.multi_cell(0, 8, content)
-        pdf.ln(5)
-    
-    return pdf
-
-# === UI COMPONENTS ===
-def show_exports():
-    with st.expander("📤 Export Options"):
-        col1, col2, col3 = st.columns(3)
-        
-        # DOCX
-        with col1:
-            doc = create_docx()
-            with NamedTemporaryFile(suffix=".docx") as tmp:
-                doc.save(tmp.name)
-                st.download_button(
-                    "📝 Download DOCX",
-                    data=open(tmp.name, "rb").read(),
-                    file_name="story.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            chapter_prompt = (
+                f"Write Chapter {chapter_num} for {genre} book. Outline: {st.session_state.outline}"
+                if is_dev else
+                f"Write Chapter {chapter_num} for {genre} story. Outline: {st.session_state.outline}"
+            )
+            content = call_openrouter(chapter_prompt, config['model'])
+            if not content:
+                continue
+                
+            book[f"Chapter {chapter_num}"] = content
+            
+            if not is_dev:
+                current_step += 1
+                progress_bar.progress(current_step/total_steps, text=f"🖼️ Creating image for Chapter {chapter_num}")
+                generate_image(
+                    f"{content[:200]} {TONE_MAP[config['tone']]}",
+                    config["img_model"],
+                    f"chapter_{chapter_num}"
                 )
         
-        # PDF
-        with col2:
-            pdf = create_pdf()
-            st.download_button(
-                "📄 Download PDF",
-                data=pdf.output(dest="S").encode("latin1"),
-                file_name="story.pdf",
-                mime="application/pdf"
-            )
+        # Finalization
+        current_step += 1
+        progress_bar.progress(current_step/total_steps, text="📕 Creating cover art...")
+        st.session_state.cover = generate_image(
+            f"Cover art for {genre} book: {premise}", 
+            config["img_model"], 
+            "cover"
+        )
         
-        # Audio
-        with col3:
-            if st.button("🎧 Generate Audiobook"):
-                with st.spinner("Generating Audio..."):
-                    full_text = "\n".join(st.session_state.book.values())
-                    tts = gTTS(full_text, lang='en', slow=False)
-                    with NamedTemporaryFile(suffix=".mp3") as fp:
-                        tts.save(fp.name)
-                        st.audio(fp.read(), format="audio/mp3")
+        st.session_state.book = book
+        progress_bar.progress(1.0, text="✅ Book generation complete!")
+        time.sleep(2)
+        
+    except Exception as e:
+        st.error(f"Generation Failed: {str(e)}")
+        progress_bar.progress(0.0, text="❌ Generation aborted")
+    finally:
+        progress_bar.empty()
 
+# === EXPORT FUNCTIONALITY ===
+def create_export_zip():
+    try:
+        verify_fonts()
+        
+        with NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+            with zipfile.ZipFile(tmp.name, 'w') as zipf:
+                # PDF Export
+                pdf = PDFStyler()
+                pdf.add_page()
+                
+                # Configure fonts
+                try:
+                    pdf.add_font('NotoSans', '', FONT_PATHS["regular"], uni=True)
+                    pdf.add_font('NotoSansB', 'B', FONT_PATHS["bold"], uni=True)
+                    pdf.font_configured = True
+                except Exception as e:
+                    st.error(f"Font initialization failed: {str(e)}")
+                    pdf.font_configured = False
+                    raise
+
+                # Title
+                title = st.session_state.gen_progress.get('prompt', 'Untitled')
+                pdf.set_font("NotoSansB", size=16)
+                pdf.cell(200, 10, text=title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.ln(10)
+
+                # Content
+                pdf.set_font("NotoSans", size=12)
+                for chapter, text in st.session_state.book.items():
+                    pdf.set_font("NotoSansB", size=14)
+                    pdf.multi_cell(w=pdf.epw, h=10, text=chapter)
+                    pdf.ln(2)
+                    pdf.set_font("NotoSans", size=12)
+                    pdf.multi_cell(w=pdf.epw, h=10, text=text)
+                    pdf.ln(8)
+
+                pdf_path = "book.pdf"
+                pdf.output(pdf_path)
+                zipf.write(pdf_path)
+                os.remove(pdf_path)
+
+                # DOCX Export
+                doc = Document()
+                doc.add_heading(title, 0)
+                for chapter, text in st.session_state.book.items():
+                    doc.add_heading(chapter, level=1)
+                    doc.add_paragraph(text)
+                docx_path = "book.docx"
+                doc.save(docx_path)
+                zipf.write(docx_path)
+                os.remove(docx_path)
+
+                # MP3 Export
+                for idx, (chapter, text) in enumerate(st.session_state.book.items()):
+                    tts = gTTS(text=text, lang='en')
+                    mp3_path = f"chapter_{idx+1}.mp3"
+                    tts.save(mp3_path)
+                    zipf.write(mp3_path)
+                    os.remove(mp3_path)
+
+        return tmp.name
+
+    except FileNotFoundError as e:
+        st.error(f"Critical file missing: {str(e)}")
+        raise
+    except Exception as e:
+        st.error(f"Export failed: {str(e)}")
+        raise
+
+# === MAIN INTERFACE ===
 def main_interface():
-    st.title("NarrativaX — AI-Powered Story Studio")
-    
-    with st.sidebar:
-        st.header("Configuration")
-        selected_genre = st.session_state.get('genre_select', GENRES["General"][0])
-        content_category = get_content_category(selected_genre)
-        
-        selected_model = st.selectbox(
-            "🤖 LLM Model",
-            LLM_MODELS[content_category],
-            index=0
-        )
-        
-        selected_img_model = st.selectbox(
-            "🖼️ Image Model",
-            list(IMAGE_MODELS[content_category].keys()),
-            index=0
-        )
-
-    if st.session_state.get('book'):
-        st.subheader("Generated Content")
-        
-        if st.session_state.cover:
-            st.image(st.session_state.cover, use_column_width=True)
-            
-        for chapter, content in st.session_state.book.items():
-            with st.expander(chapter):
-                st.write(content)
-        
-        show_exports()
-        return
-
-    with st.form("story_form"):
-        col1, col2 = st.columns(2)
-        genre = col1.selectbox(
-            "📚 Genre",
-            sorted(GENRES["General"] + GENRES["Adult"]),
-            key="genre_select"
-        )
-        tone = col2.selectbox(
-            "🎭 Tone",
-            sorted(TONE_MAP[get_content_category(genre)].keys()),
-            key="tone_select"
-        )
-        
-        prompt = st.text_area("✨ Story Premise", height=120,
-                            placeholder="A dystopian society where emotions are controlled...")
-        chapters = st.slider("📖 Chapters", 3, 50, 12)
-        
-        if st.form_submit_button("🚀 Generate Story"):
-            st.session_state.gen_progress = {
-                "prompt": prompt,
-                "genre": genre,
-                "tone": tone,
-                "chapters": chapters,
-                "model": selected_model,
-                "img_model": selected_img_model
-            }
-            generate_book_content()
-            st.rerun()
-
-# === INITIALIZATION ===
-if __name__ == "__main__":
-    for key in ['book', 'outline', 'cover', 'characters', 'gen_progress', 'image_cache', 'story_so_far']:
-        st.session_state.setdefault(key, {} if key in ['image_cache', 'characters'] else None)
-    
-    if not st.secrets.get("OPENROUTER_API_KEY") or not st.secrets.get("REPLICATE_API_TOKEN"):
-        st.error("Missing required API keys in secrets.toml")
+    try:
+        verify_fonts()
+    except FileNotFoundError as e:
+        st.error("""
+            System configuration error. Missing font files.
+            Please contact support.
+        """)
         st.stop()
+
+    st.title("NarrativaX — AI-Powered Book Creator")
     
-    os.environ["REPLICATE_API_TOKEN"] = st.secrets["REPLICATE_API_TOKEN"]
-    warnings.filterwarnings("ignore", category=UserWarning)  # Suppress PIL warnings
-    
+    with st.form("book_form"):
+        prompt = st.text_area("🖋️ Your Idea or Prompt", height=120, 
+                            placeholder="E.g. How to build unstoppable self-discipline...")
+        
+        col1, col2 = st.columns(2)
+        genre = col1.selectbox("📚 Choose Genre", sorted(set(GENRES)))
+        tone = col2.selectbox("🎭 Choose Tone", list(TONE_MAP.keys()))
+        
+        chapters = st.slider("📖 Number of Chapters", 3, 30, 10)
+        
+        col3, col4 = st.columns(2)
+        model = col3.selectbox("🤖 LLM", ["nothingiisreal/mn-celeste-12b", "openai/gpt-4"])
+        img_model = col4.selectbox("🖼️ Image Model", list(IMAGE_MODELS.keys()))
+        
+        if st.form_submit_button("🚀 Create Book"):
+            if not prompt.strip():
+                st.warning("Please enter your idea or prompt.")
+            else:
+                st.session_state.image_cache.clear()
+                st.session_state.gen_progress = {
+                    "prompt": prompt, 
+                    "genre": genre, 
+                    "tone": tone,
+                    "chapters": chapters, 
+                    "model": model, 
+                    "img_model": img_model
+                }
+                generate_book_content()
+
+    if st.session_state.book:
+        st.header("📚 Generated Content")
+        
+        tabs = st.tabs(["Chapters", "Outline", "Export"])
+        
+        with tabs[0]:
+            for chapter, content in st.session_state.book.items():
+                with st.expander(chapter):
+                    col1, col2 = st.columns([3, 2])
+                    with col1:
+                        st.write(content)
+                        with NamedTemporaryFile(suffix=".mp3") as fp:
+                            tts = gTTS(text=content, lang='en')
+                            tts.save(fp.name)
+                            st.audio(fp.name)
+                    with col2:
+                        image_key = f"chapter_{chapter.split()[-1]}"
+                        if image_key in st.session_state.image_cache:
+                            st.image(st.session_state.image_cache[image_key])
+        
+        with tabs[1]:
+            st.markdown("### Book Outline")
+            st.write(st.session_state.outline)
+        
+        with tabs[2]:
+            st.download_button(
+                label="📥 Download Complete Book",
+                data=open(create_export_zip(), "rb").read(),
+                file_name="narrativax_book.zip",
+                mime="application/zip"
+            )
+            if st.button("🧹 Clear Session"):
+                st.session_state.clear()
+                st.rerun()
+
+# === RUN APPLICATION ===
+if __name__ == "__main__":
     main_interface()
