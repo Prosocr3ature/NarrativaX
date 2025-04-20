@@ -1,3 +1,4 @@
+# main.py
 import os
 import json
 import requests
@@ -8,7 +9,6 @@ import base64
 import time
 from io import BytesIO
 from tempfile import NamedTemporaryFile
-from html import escape
 from PIL import Image
 from docx import Document
 from fpdf import FPDF
@@ -27,48 +27,42 @@ FONT_PATHS = {
 MAX_TOKENS = 1800
 IMAGE_SIZE = (768, 1024)
 SAFE_LOADING_MESSAGES = [
-    "Sharpening quills...", "Mixing metaphorical ink...",
-    "Convincing characters to behave...", "Battling clichés...",
-    "Summoning muses...", "Where we're going, we don't need chapters..."
+    "📚 Plotting character arcs...", "🎨 Mixing narrative tones...",
+    "💡 Crafting plot twists...", "🌌 Building worlds...",
+    "🔥 Igniting conflicts...", "💔 Developing relationships..."
 ]
 
-TONE_MAP = {
-    "Romantic": "sensual, romantic, literary",
-    "NSFW": "explicit, erotic, adult",
-    "Wholesome": "uplifting, warm, feel-good",
-    "Suspenseful": "tense, thrilling, page-turning",
-    "Philosophical": "deep, reflective, thoughtful",
-    "Motivational": "inspirational, personal growth, powerful",
-    "Educational": "insightful, informative, structured",
-    "Satirical": "humorous, ironic, critical",
-    "Professional": "formal, business-like, articulate",
-    "Instructive": "clear, structured, motivational",
-    "Authoritative": "firm, knowledgeable, professional",
-    "Conversational": "relatable, friendly, informal",
-    "Reflective": "thoughtful, introspective, wise"
+GENRES = {
+    "📖 Literary": ["thoughtful", "reflective", "literary"],
+    "💖 Romance": ["sensual", "emotional", "passionate"],
+    "🔞 Adult": ["explicit", "erotic", "provocative"],
+    "🚀 Sci-Fi": ["futuristic", "technological", "cosmic"],
+    "🪄 Fantasy": ["magical", "epic", "mythical"],
+    "🔪 Thriller": ["tense", "suspenseful", "dark"],
+    "💼 Business": ["professional", "insightful", "strategic"],
+    "🌱 Self-Help": ["motivational", "inspirational", "practical"]
 }
 
-GENRES = [
-    "Personal Development", "Business", "Memoir", "Self-Help", "Productivity",
-    "Adventure", "Romance", "Sci-Fi", "Mystery", "Fantasy", "Horror",
-    "Erotica", "Dark Fantasy", "Historical Fiction", "Cyberpunk",
-    "Psychological", "Crime", "LGBTQ+", "Action", "Paranormal",
-    "NSFW", "Philosophy", "Psychology", "Self-Discipline", "Time Management"
-]
+TONES = {
+    "😊 Wholesome": "uplifting, positive, family-friendly",
+    "😈 Explicit": "graphic, explicit, adult-oriented",
+    "🤔 Philosophical": "contemplative, deep, existential",
+    "😄 Humorous": "witty, lighthearted, amusing",
+    "😱 Dark": "gritty, intense, disturbing",
+    "💡 Educational": "informative, structured, factual"
+}
 
 IMAGE_MODELS = {
-    "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
-    "Reliberate V3 (NSFW)": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
-    "Stable Diffusion (General Purpose)": "stability-ai/stable-diffusion:ac732df83cea7fff18b8472768c88ad041fa750ff7682a21affe81863cbe77e4"
+    "🎨 Realistic Vision": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
+    "🔥 Reliberate NSFW": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
+    "🌌 Stable Diffusion": "stability-ai/stable-diffusion:ac732df83cea7fff18b8472768c88ad041fa750ff7682a21affe81863cbe77e4"
 }
 
-MODELS = [
-    "nothingiisreal/mn-celeste-12b",
-    "openchat/openchat-3.5-0106",
-    "gryphe/mythomax-l2-13b",
-    "nousresearch/nous-capybara-7b",
-    "cognitivecomputations/dolphin-mixtral"
-]
+MODELS = {
+    "🧠 MythoMax": "gryphe/mythomax-l2-13b",
+    "🐬 Dolphin": "cognitivecomputations/dolphin-mixtral",
+    "🤖 OpenChat": "openchat/openchat-3.5-0106"
+}
 
 # ====================
 # CORE FUNCTIONALITY
@@ -99,7 +93,10 @@ def initialize_state():
         "outline": "",
         "cover": None,
         "gen_progress": {},
-        "image_cache": {}
+        "image_cache": {},
+        "explicit_level": 0,
+        "selected_genre": None,
+        "selected_tone": None
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -118,14 +115,6 @@ def validate_environment():
         st.error(f"Replicate authentication failed: {str(e)}")
         st.stop()
 
-def verify_fonts():
-    missing = []
-    for font_type, path in FONT_PATHS.items():
-        if not os.path.exists(path):
-            missing.append(path)
-    if missing:
-        raise FileNotFoundError(f"Missing fonts: {', '.join(missing)}")
-
 # ====================
 # AI INTEGRATIONS
 # ====================
@@ -137,11 +126,15 @@ def call_openrouter(prompt, model):
         "X-Title": "NarrativaX Book Generator"
     }
     
+    explicit_prompt = ""
+    if st.session_state.explicit_level > 0:
+        explicit_prompt = f"[Explicit Level: {st.session_state.explicit_level}/100] "
+    
     payload = {
         "model": model,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{"role": "user", "content": explicit_prompt + prompt}],
         "max_tokens": MAX_TOKENS,
-        "temperature": 0.7
+        "temperature": 0.7 + (st.session_state.explicit_level * 0.002)
     }
     
     try:
@@ -160,19 +153,21 @@ def call_openrouter(prompt, model):
 def generate_image(prompt, model_name, section):
     try:
         model_version = IMAGE_MODELS[model_name]
+        explicit_addition = ""
+        if st.session_state.explicit_level > 0:
+            explicit_addition = f", explicit content level {st.session_state.explicit_level}/100"
+        
         output = replicate.run(
             model_version,
             input={
-                "prompt": f"{prompt} [Style: {TONE_MAP[st.session_state.gen_progress['tone']]}]",
+                "prompt": f"{prompt}{explicit_addition}",
                 "width": IMAGE_SIZE[0],
                 "height": IMAGE_SIZE[1],
-                "negative_prompt": "text, watermark" if "NSFW" in model_name else ""
+                "negative_prompt": "text, watermark" if "NSFW" in model_name else "",
+                "guidance_scale": 7.5 + (st.session_state.explicit_level * 0.1)
             }
         )
         
-        if not output:
-            raise Exception("No image generated")
-            
         image_url = output[0] if isinstance(output, list) else output
         response = requests.get(image_url, timeout=15)
         response.raise_for_status()
@@ -186,284 +181,217 @@ def generate_image(prompt, model_name, section):
         return None
 
 # ====================
-# CONTENT GENERATION
-# ====================
-def generate_book_content():
-    config = st.session_state.gen_progress
-    progress_bar = st.progress(0)
-    
-    try:
-        total_steps = 4 + config['chapters'] * 3
-        current_step = 0
-        
-        # Generate Outline
-        current_step += 1
-        progress_bar.progress(current_step/total_steps, text="🌟 Building your book idea...")
-        st.session_state.outline = call_openrouter(
-            f"Create outline for {config['genre']} book: {escape(config['prompt'])}. "
-            f"Tone: {TONE_MAP[config['tone']]}. Chapters: {config['chapters']}",
-            config['model']
-        )
-        
-        # Generate Chapters
-        book = {}
-        sections = ["Foreword", "Introduction"] + [f"Chapter {i+1}" for i in range(config['chapters'])] + ["Final Words"]
-        
-        for idx, sec in enumerate(sections):
-            current_step += 1
-            progress_text = random.choice(SAFE_LOADING_MESSAGES)
-            progress_bar.progress(current_step/total_steps, text=f"✍️ Writing {sec}... {progress_text}")
-            
-            content = call_openrouter(
-                f"Write {sec} for {config['genre']} book. Outline: {st.session_state.outline}",
-                config['model']
-            )
-            if content:
-                book[sec] = content
-                
-            # Generate chapter image
-            current_step += 1
-            progress_bar.progress(current_step/total_steps, text=f"🖼️ Creating image for {sec}")
-            generate_image(
-                f"{content[:200]} {TONE_MAP[config['tone']]}",
-                config["img_model"],
-                f"section_{idx}"
-            )
-        
-        # Generate Cover
-        current_step += 1
-        progress_bar.progress(current_step/total_steps, text="📕 Creating cover art...")
-        st.session_state.cover = generate_image(
-            f"Cover art for {config['genre']} book: {config['prompt']}", 
-            config["img_model"], 
-            "cover"
-        )
-        
-        st.session_state.book = book
-        st.session_state.chapter_order = sections
-        progress_bar.progress(1.0, text="✅ Book generation complete!")
-        time.sleep(2)
-        
-    except Exception as e:
-        st.error(f"Generation Failed: {str(e)}")
-    finally:
-        progress_bar.empty()
-
-# ====================
-# EXPORT HANDLING
-# ====================
-def create_export_zip():
-    try:
-        verify_fonts()
-        
-        with NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-            with zipfile.ZipFile(tmp.name, 'w') as zipf:
-                # PDF Export
-                pdf = PDFStyler()
-                pdf.add_page()
-                pdf.add_font('NotoSans', '', FONT_PATHS["regular"])
-                pdf.add_font('NotoSans', 'B', FONT_PATHS["bold"])
-                pdf.font_configured = True
-
-                title = st.session_state.gen_progress.get('prompt', 'Untitled')
-                pdf.set_font("NotoSans", "B", size=16)
-                pdf.cell(200, 10, text=title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                pdf.ln(10)
-
-                pdf.set_font("NotoSans", size=12)
-                for chapter, text in st.session_state.book.items():
-                    pdf.set_font("NotoSans", "B", size=14)
-                    pdf.multi_cell(w=pdf.epw, h=10, text=chapter)
-                    pdf.ln(2)
-                    pdf.set_font("NotoSans", "", size=12)
-                    pdf.multi_cell(w=pdf.epw, h=10, text=text)
-                    pdf.ln(8)
-
-                pdf_path = "book.pdf"
-                pdf.output(pdf_path)
-                zipf.write(pdf_path)
-                os.remove(pdf_path)
-
-                # DOCX Export
-                doc = Document()
-                doc.add_heading(title, 0)
-                for chapter, text in st.session_state.book.items():
-                    doc.add_heading(chapter, level=1)
-                    doc.add_paragraph(text)
-                docx_path = "book.docx"
-                doc.save(docx_path)
-                zipf.write(docx_path)
-                os.remove(docx_path)
-
-                # Audio Export
-                for idx, (chapter, text) in enumerate(st.session_state.book.items()):
-                    tts = gTTS(text=text, lang='en')
-                    mp3_path = f"chapter_{idx+1}.mp3"
-                    tts.save(mp3_path)
-                    zipf.write(mp3_path)
-                    os.remove(mp3_path)
-
-        return tmp.name
-    except Exception as e:
-        st.error(f"Export failed: {str(e)}")
-        raise
-
-# ====================
 # UI COMPONENTS
 # ====================
+def genre_selector():
+    st.subheader("🎭 Choose Your Genre")
+    cols = st.columns(4)
+    for idx, (genre, tags) in enumerate(GENRES.items()):
+        with cols[idx % 4]:
+            if st.button(
+                genre,
+                key=f"genre_{idx}",
+                use_container_width=True,
+                help=f"Tags: {', '.join(tags)}"
+            ):
+                st.session_state.selected_genre = genre
+                st.session_state.gen_progress['genre'] = genre
+
+def tone_selector():
+    st.subheader("🎨 Select Narrative Tone")
+    cols = st.columns(3)
+    for idx, (tone, desc) in enumerate(TONES.items()):
+        with cols[idx % 3]:
+            if st.button(
+                tone,
+                key=f"tone_{idx}",
+                use_container_width=True,
+                help=desc
+            ):
+                st.session_state.selected_tone = tone
+                st.session_state.gen_progress['tone'] = tone
+
+def explicit_controls():
+    st.subheader("🔞 Content Intensity")
+    st.session_state.explicit_level = st.slider(
+        "Sexual Content Level (0 = Clean, 100 = Explicit)",
+        0, 100, 0,
+        help="Adjust the level of romantic/sexual content in your book"
+    )
+    st.caption("Note: Higher levels may trigger content filters")
+
+# ====================
+# MAIN INTERFACE
+# ====================
 def main_interface():
-    st.set_page_config(page_title="NarrativaX Studio", layout="wide")
+    st.set_page_config(
+        page_title="NarrativaX Studio",
+        page_icon="📚",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Custom CSS
+    st.markdown("""
+    <style>
+    [data-testid="stAppViewContainer"] {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        color: #ffffff;
+    }
+    .stButton>button {
+        background: #2a2a4a;
+        color: white;
+        border-radius: 10px;
+        padding: 10px 24px;
+        transition: all 0.3s;
+    }
+    .stButton>button:hover {
+        background: #3a3a5a;
+        transform: scale(1.05);
+    }
+    .selected {
+        background: #4a4a6a !important;
+        border: 2px solid #6c5b7b !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     initialize_state()
     validate_environment()
-    
-    try:
-        verify_fonts()
-    except FileNotFoundError as e:
-        st.error("System configuration error. Missing font files.")
-        st.stop()
 
     # Sidebar
     with st.sidebar:
         st.image("https://i.imgur.com/vGV9N5k.png", width=200)
-        st.markdown("**NarrativaX v3**")
+        st.markdown("### 🔧 Generation Settings")
         
-        if st.button("💾 Save Session"):
-            st.session_state.last_saved = time.time()
-            with open("session.json", "w") as f:
-                json.dump(st.session_state.book, f)
-            st.success("Session saved!")
-            
-        if st.button("📂 Load Session"):
-            try:
-                with open("session.json") as f:
-                    st.session_state.book = json.load(f)
-                    st.session_state.chapter_order = list(st.session_state.book.keys())
-                st.success("Session loaded!")
-            except Exception as e:
-                st.error(f"Load failed: {str(e)}")
-                
+        # Model Selection
+        st.selectbox("🤖 AI Model", options=MODELS.keys(), key="selected_model")
+        st.selectbox("🖼️ Image Model", options=IMAGE_MODELS.keys(), key="selected_image_model")
+        
+        # Explicit Controls
+        explicit_controls()
+        
+        # Status
+        st.markdown("---")
         if st.session_state.last_saved:
-            st.info(f"Last saved {int(time.time() - st.session_state.last_saved)}s ago")
-
-    # Main Form
-    with st.form("book_form"):
-        st.text_area("📖 Book Concept", height=150, key="prompt",
-                    placeholder="E.g. A dystopian romance about AI lovers...")
+            st.caption(f"⏱️ Last saved: {time.strftime('%Y-%m-%d %H:%M', time.localtime(st.session_state.last_saved))}")
         
+        # Save/Load
         col1, col2 = st.columns(2)
-        genre = col1.selectbox("🎭 Genre", sorted(set(GENRES)))
-        tone = col2.selectbox("🎨 Tone", list(TONE_MAP.keys()))
-        
-        col3, col4 = st.columns(2)
-        chapters = col3.slider("📚 Chapters", 3, 30, 10)
-        model = col4.selectbox("🤖 AI Model", MODELS)
-        
-        img_model = st.selectbox("🖼️ Image Model", list(IMAGE_MODELS.keys()))
-        
-        if st.form_submit_button("🚀 Generate Book"):
-            st.session_state.image_cache.clear()
+        with col1:
+            if st.button("💾 Save Session"):
+                with open("session.json", "w") as f:
+                    json.dump(st.session_state.book, f)
+                st.session_state.last_saved = time.time()
+                st.success("Session saved!")
+        with col2:
+            if st.button("📂 Load Session"):
+                try:
+                    with open("session.json") as f:
+                        st.session_state.book = json.load(f)
+                    st.success("Session loaded!")
+                except Exception as e:
+                    st.error(f"Load failed: {str(e)}")
+
+    # Main Content
+    st.title("📖 NarrativaX - AI-Powered Story Studio")
+    
+    # Genre/Tone Selection
+    genre_selector()
+    tone_selector()
+    
+    # Main Controls
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        chapters = st.slider("📑 Chapters", 3, 30, 10)
+    with col2:
+        prompt = st.text_input("✨ Your Story Seed", placeholder="A dystopian romance between an AI and a human rebel...")
+
+    if st.button("🚀 Generate Book", use_container_width=True, type="primary"):
+        if not st.session_state.selected_genre or not st.session_state.selected_tone:
+            st.warning("Please select both a genre and tone!")
+        else:
             st.session_state.gen_progress = {
-                "prompt": st.session_state.prompt, 
-                "genre": genre, 
-                "tone": tone,
-                "chapters": chapters, 
-                "model": model, 
-                "img_model": img_model
+                "prompt": prompt,
+                "genre": st.session_state.selected_genre,
+                "tone": st.session_state.selected_tone,
+                "chapters": chapters,
+                "model": MODELS[st.session_state.selected_model],
+                "img_model": st.session_state.selected_image_model
             }
             generate_book_content()
 
-    # Tabs Interface
+    # Content Tabs
     if st.session_state.book:
-        tabs = st.tabs(["📖 Chapters", "🎙️ Narration", "🖼️ Illustrations", "📤 Export", "👥 Characters", "💬 Feedback"])
+        tabs = st.tabs(["📖 Chapters", "🎙️ Narration", "🖼️ Artwork", "📤 Export", "👥 Characters"])
         
         with tabs[0]:
-            st.subheader("Reorder Chapters")
+            st.subheader("Chapter Management")
             reordered = sort_items(st.session_state.chapter_order)
             if reordered:
                 st.session_state.chapter_order = reordered
 
             for title in st.session_state.chapter_order:
-                content = st.session_state.book.get(title, "")
                 with st.expander(title):
-                    st.markdown(content)
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button(f"🔄 Regenerate {title}", key=f"regen_{title}"):
-                            st.session_state.book[title] = call_openrouter(
-                                f"Rewrite this chapter: {content}", 
-                                st.session_state.gen_progress['model']
-                            )
-                    with col2:
-                        if st.button(f"✏️ AI Edit {title}", key=f"edit_{title}"):
-                            instruction = st.text_input("Edit instructions", key=f"inst_{title}")
-                            if instruction:
-                                st.session_state.book[title] = call_openrouter(
-                                    f"{instruction}:\n\n{content}", 
-                                    st.session_state.gen_progress['model']
-                                )
-
+                    content = st.session_state.book[title]
+                    st.markdown(f"```\n{content}\n```")
+                    if st.button(f"🔄 Regenerate {title}", key=f"regen_{title}"):
+                        st.session_state.book[title] = call_openrouter(
+                            f"Rewrite this chapter: {content}",
+                            st.session_state.gen_progress['model']
+                        )
+        
         with tabs[1]:
+            st.subheader("Audio Narration")
             for title, content in st.session_state.book.items():
                 with st.expander(f"🔊 {title}"):
-                    if st.button(f"Narrate {title}", key=f"narrate_{title}"):
-                        with NamedTemporaryFile(suffix=".mp3") as fp:
-                            tts = gTTS(text=content, lang='en')
-                            tts.save(fp.name)
-                            st.audio(fp.name)
-
+                    with NamedTemporaryFile(suffix=".mp3") as fp:
+                        tts = gTTS(text=content, lang='en')
+                        tts.save(fp.name)
+                        st.audio(fp.name)
+        
         with tabs[2]:
+            st.subheader("Generated Artwork")
             if st.session_state.cover:
                 st.image(st.session_state.cover, caption="Book Cover", use_container_width=True)
-                
+            
             cols = st.columns(3)
             for idx, (section, image) in enumerate(st.session_state.image_cache.items()):
                 with cols[idx % 3]:
                     st.image(image, caption=section.replace("_", " ").title())
-
+        
         with tabs[3]:
-            st.download_button(
-                label="📦 Download Complete Package",
-                data=open(create_export_zip(), "rb").read(),
-                file_name="narrativax_book.zip",
-                mime="application/zip"
-            )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Export DOCX"):
-                    path = export_docx(st.session_state.book)
-                    st.download_button("Download DOCX", open(path, "rb"), "book.docx")
-            with col2:
-                if st.button("Export PDF"):
-                    path = export_pdf(st.session_state.book)
-                    st.download_button("Download PDF", open(path, "rb"), "book.pdf")
-
+            st.subheader("Export Options")
+            if st.button("📦 Export Complete Package", use_container_width=True):
+                with st.spinner("Packaging your masterpiece..."):
+                    zip_path = create_export_zip()
+                    st.download_button(
+                        label="⬇️ Download ZIP",
+                        data=open(zip_path, "rb").read(),
+                        file_name="narrativax_book.zip",
+                        mime="application/zip"
+                    )
+        
         with tabs[4]:
-            count = st.number_input("Number of Characters", 1, 20, 3)
-            if st.button("Generate Characters"):
+            st.subheader("Character Development")
+            if st.button("➕ Generate New Characters", use_container_width=True):
                 new_chars = call_openrouter(
-                    f"Generate {count} characters for {st.session_state.gen_progress['prompt']}",
+                    f"Generate 3 characters for {st.session_state.gen_progress['prompt']}",
                     st.session_state.gen_progress['model']
                 ).split("\n\n")
                 st.session_state.characters.extend(new_chars)
-
-            for i, desc in enumerate(st.session_state.characters):
-                with st.expander(f"Character {i+1}"):
-                    updated = st.text_area(f"Edit Character {i+1}", desc, key=f"char_{i}")
-                    if updated != desc:
-                        st.session_state.characters[i] = updated
-
-        with tabs[5]:
-            with st.form("feedback_form"):
-                feedback = st.text_area("Your suggestions for improvement")
-                if st.form_submit_button("Submit Feedback"):
-                    st.session_state.feedback_history.append(feedback)
-                    st.success("Thank you for your feedback!")
-
-            if st.session_state.feedback_history:
-                st.subheader("Recent Feedback")
-                for fb in st.session_state.feedback_history[-3:]:
-                    st.info(fb)
+            
+            for idx, desc in enumerate(st.session_state.characters):
+                with st.expander(f"🧑💼 Character #{idx+1}"):
+                    cols = st.columns([3, 1])
+                    with cols[0]:
+                        new_desc = st.text_area(f"Description #{idx+1}", desc, height=150)
+                    with cols[1]:
+                        if st.button(f"🎨 Visualize #{idx+1}", key=f"visual_{idx}"):
+                            img = generate_image(new_desc, st.session_state.selected_image_model, f"char_{idx}")
+                            st.image(img)
+                    if new_desc != desc:
+                        st.session_state.characters[idx] = new_desc
 
 if __name__ == "__main__":
     main_interface()
