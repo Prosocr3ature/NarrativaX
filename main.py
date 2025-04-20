@@ -54,9 +54,9 @@ TONES = {
 
 IMAGE_MODELS = {
     "🎨 Realistic Vision": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
-    "🔥 Reliberate NSFW": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
-    "🌌 Stable Diffusion": "stability-ai/stable-diffusion:ac732df83cea7fff18b8472768c88ad041fa750ff7682a21affe81863cbe77e4"
+    "🔥 Reliberate NSFW": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29"
 }
+
 
 MODELS = {
     "🧠 MythoMax": "gryphe/mythomax-l2-13b",
