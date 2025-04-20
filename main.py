@@ -212,9 +212,12 @@ def generate_book_content():
         try:
             # 1. Generate Outline
             st.write(random.choice(SAFE_LOADING_MESSAGES))
-            outline_prompt = f"""Create a {st.session_state.gen_progress['chapters']}-chapter outline for a {
-                st.session_state.gen_progress['genre']} story with {st.session_state.gen_progress['tone']
-                } tone. Story seed: {st.session_state.gen_progress['prompt']}"""
+            outline_prompt = (
+                f"Create a {st.session_state.gen_progress['chapters']}-chapter outline for a "
+                f"{st.session_state.gen_progress['genre']} story with "
+                f"{st.session_state.gen_progress['tone']} tone. "
+                f"Story seed: {st.session_state.gen_progress['prompt']}"
+            )
             
             outline = call_openrouter(outline_prompt, st.session_state.gen_progress['model'])
             st.session_state.outline = outline
@@ -234,8 +237,11 @@ def generate_book_content():
             
             # 3. Generate Cover Image
             st.write("🎨 Painting the cover...")
-            cover_prompt = f"Book cover for {st.session_state.gen_progress['prompt']}, {
-                st.session_state.gen_progress['genre']}, {st.session_state.gen_progress['tone']} style"
+            cover_prompt = (
+                f"Book cover for {st.session_state.gen_progress['prompt']}, "
+                f"{st.session_state.gen_progress['genre']}, "
+                f"{st.session_state.gen_progress['tone']} style"
+            )
             st.session_state.cover = generate_image(
                 cover_prompt,
                 st.session_state.gen_progress['img_model'],
