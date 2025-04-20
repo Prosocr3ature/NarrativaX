@@ -391,7 +391,7 @@ def main_interface():
                     st.session_state.characters[idx][field] = st.text_area(field.capitalize(), char[field], key=f"{field}_{idx}")
 
     # Structure Tab
-    with tabs[4]:
+        with tabs[4]:
         structure = st.session_state.get("book_structure")
         if not structure:
             st.info("No structure available yet.")
@@ -405,7 +405,7 @@ def main_interface():
                         with st.expander(ch["title"]):
                             st.code(ch["outline"])
                             for scene in ch["scenes"]:
-                                st.subheader(scene["title"])
+                                st.markdown(f"**{scene['title']}**")
                                 st.write(scene["content"])
 
 # === EXPORT SYSTEM ===
