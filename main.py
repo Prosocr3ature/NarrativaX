@@ -1,4 +1,4 @@
-# main.py - NarrativaX (Final Production Version)
+# main.py - NarrativaX Enhanced
 import os
 import json
 import requests
@@ -20,360 +20,295 @@ from io import BytesIO
 import streamlit as st
 
 # === CONSTANTS ===
-CONTENT_TYPES = ["Adult", "Normal"]
 FONT_PATHS = {
     "regular": "fonts/NotoSans-Regular.ttf",
     "bold": "fonts/NotoSans-Bold.ttf"
 }
 MAX_TOKENS = 2500
-IMAGE_SIZE = (832, 1216)
+IMAGE_SIZE = (768, 1024)
 SAFE_LOADING_MESSAGES = [
-    "Crafting your narrative...", "Developing characters...",
-    "Building immersive worlds...", "Engineering plot twists...",
-    "Polishing dialogues...", "Finalizing chapters..."
+    "Sharpening quills...", "Mixing metaphorical ink...",
+    "Convincing characters to behave...", "Battling clichés...",
+    "Summoning muses...", "Where we're going, we don't need chapters..."
 ]
 
-ADULT_TONE_MAP = {
-    "Erotic": "explicit, sensual, adult-oriented, detailed intimacy",
-    "BDSM": "power dynamics, kink-positive, consensual exploration",
-    "Taboo": "forbidden desires, transgressive themes, dark romance",
-    "Harem": "multiple partners, fantasy dynamics, power play",
-    "Fantasy": "mythical creatures, magical realms, supernatural encounters",
-    "Dark Romance": "morally gray, obsessive love, dangerous passions",
-    "LGBTQ+": "diverse relationships, queer perspectives, inclusive",
-    "Historical Erotica": "period-accurate settings with explicit content"
+TONE_MAP = {
+    # Normal tones
+    "Wholesome": "uplifting, warm, feel-good",
+    "Suspenseful": "tense, thrilling, page-turning",
+    "Philosophical": "deep, reflective, thoughtful",
+    "Motivational": "inspirational, personal growth, powerful",
+    "Educational": "insightful, informative, structured",
+    "Professional": "formal, business-like, articulate",
+    # Adult tones
+    "NSFW": "explicit, erotic, adult",
+    "Graphic": "visceral, detailed, intense",
+    "Kinky": "fetish, BDSM, power dynamics",
+    "Taboo": "forbidden, controversial, transgressive",
+    "Sensual": "slow-burn, intimate, passionate"
 }
 
-NORMAL_TONE_MAP = {
-    "Romantic": "passionate, emotional, relationship-focused",
-    "Adventure": "action-packed, thrilling, journey-driven",
-    "Mystery": "suspenseful, puzzling, clue-oriented",
-    "Literary": "character-driven, thematic, sophisticated",
-    "Comedy": "humorous, light-hearted, witty",
-    "Drama": "emotional, conflict-driven, realistic",
-    "Young Adult": "coming-of-age, relatable, energetic",
-    "Historical": "period-accurate, vintage aesthetics"
-}
-
-ADULT_GENRES = [
-    "Erotic Romance", "BDSM Lifestyle", "Dark Fantasy", "Taboo Desires",
-    "Polyamorous Relationships", "Monster Romance", "Omegaverse",
-    "Vampire Erotica", "Shifter Romance", "Fantasy Harem", "Dystopian Desire",
-    "Forbidden Love", "Age Gap Romance", "Secret Affair", "Billionaire Domination"
+GENRES = [
+    # Normal genres
+    "Personal Development", "Business", "Memoir", "Self-Help", "Productivity",
+    "Adventure", "Romance", "Sci-Fi", "Mystery", "Fantasy", "Horror",
+    "Historical Fiction", "Philosophy", "Psychology",
+    # Adult genres
+    "Erotica", "BDSM", "Taboo Romance", "LGBTQ+ Erotica", "Harem",
+    "Omegaverse", "Dark Romance", "Fantasy Erotica", "Historical Smut",
+    "Bisexual Fiction", "Polyamory", "Fetish Exploration"
 ]
 
-NORMAL_GENRES = [
-    "Contemporary Romance", "Mystery Thriller", "Literary Fiction",
-    "Young Adult Fantasy", "Historical Fiction", "Science Fiction",
-    "Coming-of-Age Drama", "Comedy of Errors", "Adventure Quest",
-    "Family Saga", "Crime Noir", "Psychological Drama"
-]
-
-ADULT_IMAGE_MODELS = {
-    "Realistic Vision V6": "lucataco/realistic-vision-v6:0a7b1b83a7c5710b5e60481a0d4d62d26a4633a7c368d0d2f00f49d27678e2bc",
-    "Reliberate V3 (NSFW+)": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
+IMAGE_MODELS = {
+    "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
+    "Reliberate V3 (NSFW)": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
+    "AbsoluteReality v1.8.1": "lucataco/absolutereality-v1.8.1:1dfa0b8a474d55f4d6f9c0e1e7a9d5c09f2d8940d13b8f2a8d00a8673c1b115b3"
 }
 
-NORMAL_IMAGE_MODELS = {
-    "Stable Diffusion XL": "stability-ai/sdxl:c221b2b8ef527988fb59bf24a8b97c4561f1c671f73bd389f866bfb27c061316",
-    "OpenJourney V4": "prompthero/openjourney:9936c2001faa2194a261c01381f90e65261879985476014a0a37a334593a05eb",
+ADULT_MODELS = {
+    "KoboldAI/Psyfighter-13B": "koboldai/psyfighter-13b",
+    "Mancer/Weaver (Alpha)": "mancer/weaver",
+    "MythoMax-L2-13B": "mythomax-l2-13b"
 }
-
-CREATION_STEPS = [
-    "content_type", "genre", "tone", "premise", 
-    "chapters", "parameters", "characters",
-    "review", "generation"
-]
 
 # === SESSION STATE ===
-if 'book' not in st.session_state: st.session_state.book = {}
-if 'outline' not in st.session_state: st.session_state.outline = []
-if 'cover' not in st.session_state: st.session_state.cover = None
-if 'characters' not in st.session_state: st.session_state.characters = []
-if 'gen_progress' not in st.session_state: st.session_state.gen_progress = 0
-if 'image_cache' not in st.session_state: st.session_state.image_cache = {}
-if 'chapter_history' not in st.session_state: st.session_state.chapter_history = []
-if 'content_type' not in st.session_state: st.session_state.content_type = "Normal"
-if 'chat_history' not in st.session_state: st.session_state.chat_history = []
-if 'current_step' not in st.session_state: st.session_state.current_step = 0
-if 'user_answers' not in st.session_state: st.session_state.user_answers = {}
-if 'generation_status' not in st.session_state: st.session_state.generation_status = "idle"
+for key in ['book', 'outline', 'cover', 'characters', 'gen_progress', 'image_cache', 'adult_mode']:
+    st.session_state.setdefault(key, {} if key == 'image_cache' else None)
 
 # === API CONFIGURATION ===
 def validate_api_keys():
-    required_keys = ['REPLICATE_API_TOKEN']
+    required_keys = ['OPENROUTER_API_KEY', 'REPLICATE_API_TOKEN']
     missing = [key for key in required_keys if key not in st.secrets]
     if missing:
-        st.error(f"Missing API keys: {', '.join(missing)}")
+        st.error(f"Missing API keys in secrets: {', '.join(missing)}")
         st.stop()
 
 validate_api_keys()
 os.environ["REPLICATE_API_TOKEN"] = st.secrets["REPLICATE_API_TOKEN"]
 
-# === CHAT INTERFACE ===
-def main_interface():
-    st.set_page_config(page_title="NarrativaX", page_icon="📚", layout="wide")
-    
-    # Custom CSS
-    st.markdown("""
-    <style>
-    .main {background: linear-gradient(45deg, #2b2d42 0%, #1d1e2c 100%);}
-    .chat-message {padding: 1.5rem; border-radius: 15px; margin: 1rem 0;}
-    .user-message {background: #2d3047; border: 1px solid #404467;}
-    .bot-message {background: #1a1b2f; border: 1px solid #2d2f4a;}
-    .stButton>button {border-radius: 15px; padding: 10px 25px; transition: all 0.3s;}
-    .stButton>button:hover {transform: scale(1.05);}
-    .progress-steps {padding: 1rem; background: #151728; border-radius: 10px;}
-    </style>
-    """, unsafe_allow_html=True)
+# === ENHANCED FUNCTIONALITY ===
+def generate_continuation(chapter_num):
+    previous_content = st.session_state.book.get(f"Chapter {chapter_num}", "")
+    prompt = f"Continue and expand this chapter, maintaining continuity:\n{previous_content}"
+    new_content = call_openrouter(prompt, st.session_state.gen_progress['model'])
+    if new_content:
+        st.session_state.book[f"Chapter {chapter_num}"] += "\n\n" + new_content
 
-    # Sidebar Progress
-    with st.sidebar:
-        st.title("📖 Creation Progress")
-        with st.container():
-            st.markdown("<div class='progress-steps'>", unsafe_allow_html=True)
-            steps = [
-                "Content Type", "Genre", "Tone",
-                "Premise", "Chapters", "Parameters",
-                "Characters", "Review", "Generate"
-            ]
-            current_step = st.session_state.current_step
-            for i, step in enumerate(steps):
-                emoji = "🟢" if i < current_step else "⚪"
-                st.markdown(f"{emoji} {step}")
-            st.markdown("</div>", unsafe_allow_html=True)
+def regenerate_chapter(chapter_num):
+    chapter_key = f"Chapter {chapter_num}"
+    previous_content = st.session_state.book.get(chapter_key, "")
+    prompt = f"Rewrite this chapter with different execution but same plot points:\n{previous_content}"
+    new_content = call_openrouter(prompt, st.session_state.gen_progress['model'])
+    if new_content:
+        st.session_state.book[chapter_key] = new_content
+
+def generate_character_bios():
+    prompt = f"Generate detailed character profiles for: {', '.join(st.session_state.characters.keys())}"
+    bios = call_openrouter(prompt, st.session_state.gen_progress['model'])
+    st.session_state.characters = json.loads(bios) if bios else {}
+
+# === MODIFIED CORE FUNCTIONALITY ===
+def generate_book_content():
+    config = st.session_state.gen_progress
+    genre = config['genre']
+    is_dev = genre in ["Personal Development", "Self-Help", "Productivity"]
+    progress_bar = st.progress(0)
+    
+    try:
+        total_steps = 5 + (config['chapters'] * (3 if is_dev else 4))
+        current_step = 0
+        
+        # Character Development
+        if st.session_state.characters:
+            current_step += 1
+            progress_bar.progress(current_step/total_steps, text="🎭 Developing characters...")
+            generate_character_bios()
+        
+        # Premise Generation
+        current_step += 1
+        progress_bar.progress(current_step/total_steps, text="🌟 Building your book idea...")
+        premise_prompt = f"Develop a {genre} book idea: {escape(config['prompt'])}"
+        if st.session_state.characters:
+            premise_prompt += f"\nCharacters: {json.dumps(st.session_state.characters)}"
+        premise = call_openrouter(premise_prompt, config['model'])
+        
+        # Enhanced Outline Generation
+        current_step += 1
+        progress_bar.progress(current_step/total_steps, text="🗂️ Generating detailed outline...")
+        outline_prompt = f"""
+        Create a detailed {genre} outline with:
+        - 3-5 key plot points per chapter
+        - Character development arcs
+        - Thematic progression
+        - Setup/payoff structure
+        Genre: {genre}
+        Premise: {premise}
+        Tone: {TONE_MAP[config['tone']]}
+        """
+        st.session_state.outline = call_openrouter(outline_prompt, config['model'])
+        
+        # Chapter Generation with Continuity
+        book = {}
+        previous_chapter = ""
+        for chapter_num in range(1, config['chapters'] + 1):
+            current_step += 1
+            progress_text = random.choice(SAFE_LOADING_MESSAGES)
+            progress_bar.progress(current_step/total_steps, text=f"✍️ Writing Chapter {chapter_num}... {progress_text}")
             
-            if st.session_state.generation_status == "complete":
+            chapter_prompt = f"""
+            Write Chapter {chapter_num} for: {genre}
+            Outline: {st.session_state.outline}
+            Previous Chapter: {previous_chapter[:1000]}
+            Tone: {TONE_MAP[config['tone']}
+            {"Include explicit content" if st.session_state.adult_mode else ""}
+            """
+            content = call_openrouter(chapter_prompt, config['model'])
+            if content:
+                book[f"Chapter {chapter_num}"] = content
+                previous_chapter = content
+            
+            # Image Generation
+            if not is_dev:
+                current_step += 1
+                progress_bar.progress(current_step/total_steps, text=f"🖼️ Creating image for Chapter {chapter_num}")
+                img_prompt = f"{content[:200]} {TONE_MAP[config['tone']]}"
+                if st.session_state.adult_mode:
+                    img_prompt += " (NSFW:1.3)"
+                generate_image(img_prompt, config["img_model"], f"chapter_{chapter_num}")
+
+        # Finalization
+        current_step += 1
+        progress_bar.progress(current_step/total_steps, text="📕 Creating cover art...")
+        cover_prompt = f"Cover art for {genre} book: {premise}"
+        if st.session_state.adult_mode:
+            cover_prompt += " (NSFW, erotic)"
+        st.session_state.cover = generate_image(cover_prompt, config["img_model"], "cover")
+        
+        st.session_state.book = book
+        progress_bar.progress(1.0, text="✅ Book generation complete!")
+        time.sleep(2)
+        
+    except Exception as e:
+        st.error(f"Generation Failed: {str(e)}")
+    finally:
+        progress_bar.empty()
+
+# === MODIFIED MAIN INTERFACE ===
+def main_interface():
+    st.title("NarrativaX — Enhanced AI Book Creator")
+    
+    # Adult Mode Toggle
+    st.session_state.adult_mode = st.sidebar.checkbox("🔞 Adult Mode", 
+        help="Enable NSFW content generation")
+    
+    with st.form("book_form"):
+        col_main = st.columns([3, 1])
+        prompt = col_main[0].text_area("🖋️ Your Idea or Prompt", height=120,
+            placeholder="E.g. A forbidden romance between a knight and dragon shapeshifter...")
+        
+        # Character Creation
+        with col_main[1].expander("🧑‍🎨 Add Characters"):
+            char_name = st.text_input("Name")
+            char_desc = st.text_input("Description")
+            if st.button("Add Character"):
+                if char_name and char_desc:
+                    st.session_state.characters[char_name] = char_desc
+        
+        # Dynamic Filters
+        col_filters = st.columns(2)
+        available_genres = [g for g in GENRES if ("Erotica" not in g and "BDSM" not in g) 
+                          if not st.session_state.adult_mode else GENRES]
+        available_tones = [t for t in TONE_MAP.keys() if t not in ["NSFW", "Graphic"] 
+                         if not st.session_state.adult_mode else TONE_MAP.keys()]
+        
+        genre = col_filters[0].selectbox("📚 Genre", sorted(available_genres))
+        tone = col_filters[1].selectbox("🎭 Tone", available_tones)
+        
+        # Model Selection
+        col_models = st.columns(2)
+        available_llms = ["nothingiisreal/mn-celeste-12b", "openai/gpt-4"] + (
+            list(ADULT_MODELS.keys()) if st.session_state.adult_mode else [])
+        available_img_models = ["Realistic Vision v5.1", "AbsoluteReality v1.8.1"] + (
+            ["Reliberate V3 (NSFW)"] if st.session_state.adult_mode else [])
+        
+        model = col_models[0].selectbox("🤖 LLM", available_llms)
+        img_model = col_models[1].selectbox("🖼️ Image Model", available_img_models)
+        
+        # Chapter Controls
+        chapters = st.slider("📖 Chapters", 3, 50, 12,
+            help="For complex stories, 15-25 chapters recommended")
+        
+        if st.form_submit_button("🚀 Create Book"):
+            if not prompt.strip():
+                st.warning("Please enter your idea or prompt.")
+            else:
+                st.session_state.image_cache.clear()
+                st.session_state.gen_progress = {
+                    "prompt": prompt, 
+                    "genre": genre, 
+                    "tone": tone,
+                    "chapters": chapters, 
+                    "model": model, 
+                    "img_model": img_model
+                }
+                generate_book_content()
+
+    # Display Generated Content
+    if st.session_state.book:
+        st.header("📚 Generated Content")
+        tabs = st.tabs(["Chapters", "Outline", "Characters", "Export"])
+        
+        with tabs[0]:
+            for chapter in sorted(st.session_state.book.keys()):
+                with st.expander(chapter):
+                    col_chapter = st.columns([4, 1])
+                    chapter_num = int(chapter.split()[-1])
+                    
+                    with col_chapter[0]:
+                        st.write(st.session_state.book[chapter])
+                        st.download_button(
+                            label=f"📥 Download {chapter}",
+                            data=st.session_state.book[chapter],
+                            file_name=f"{chapter.lower().replace(' ', '_')}.txt"
+                        )
+                        
+                        col_actions = st.columns(2)
+                        col_actions[0].button(
+                            "🔄 Regenerate", key=f"reg_{chapter_num}",
+                            on_click=regenerate_chapter, args=(chapter_num,)
+                        )
+                        col_actions[1].button(
+                            "🔁 Continue", key=f"cont_{chapter_num}",
+                            on_click=generate_continuation, args=(chapter_num,)
+                        )
+                    
+                    with col_chapter[1]:
+                        image_key = f"chapter_{chapter_num}"
+                        if image_key in st.session_state.image_cache:
+                            st.image(st.session_state.image_cache[image_key])
+        
+        with tabs[1]:
+            st.markdown("### Book Outline")
+            st.write(st.session_state.outline)
+        
+        with tabs[2]:
+            st.markdown("### Character Profiles")
+            for char, desc in st.session_state.characters.items():
+                with st.expander(char):
+                    st.write(desc)
+        
+        with tabs[3]:
+            with st.spinner("📦 Packing your masterpiece..."):
+                zip_path = create_export_zip()
                 st.download_button(
-                    label="📥 Download Book Package",
-                    data=create_zip_package(),
+                    label="📥 Download Complete Package",
+                    data=open(zip_path, "rb").read(),
                     file_name="narrativax_book.zip",
                     mime="application/zip"
                 )
+            if st.button("🧹 Clear Session"):
+                st.session_state.clear()
+                st.rerun()
 
-    # Main Chat Area
-    st.title("📚 NarrativaX — AI Story Architect")
-    st.caption("Conversational Interface for Professional-Grade Story Creation")
-
-    # Chat History
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-            if "options" in msg:
-                cols = st.columns([1]*len(msg["options"]))
-                for i, option in enumerate(msg["options"]):
-                    if cols[i].button(option, key=f"opt_{msg['step']}_{i}"):
-                        handle_user_response(option, msg["step"])
-
-    # Current Step Handler
-    if st.session_state.current_step < len(CREATION_STEPS):
-        handle_creation_step(CREATION_STEPS[st.session_state.current_step])
-    else:
-        finalize_creation()
-
-# === STEP HANDLERS ===
-def handle_creation_step(step):
-    handlers = {
-        "content_type": step_content_type,
-        "genre": step_genre,
-        "tone": step_tone,
-        "premise": step_premise,
-        "chapters": step_chapters,
-        "parameters": step_parameters,
-        "characters": step_characters,
-        "review": step_review,
-        "generation": step_generation
-    }
-    handlers[step]()
-
-def step_content_type():
-    add_chat_message(
-        "Welcome to NarrativaX! Let's create your story.\n"
-        "First, choose your content type:",
-        options=CONTENT_TYPES,
-        step="content_type"
-    )
-
-def step_genre():
-    genres = ADULT_GENRES if st.session_state.user_answers.get("content_type") == "Adult" else NORMAL_GENRES
-    add_chat_message(
-        "Excellent choice! Now select your genre:",
-        options=genres,
-        step="genre"
-    )
-
-def step_tone():
-    tone_map = ADULT_TONE_MAP if st.session_state.user_answers.get("content_type") == "Adult" else NORMAL_TONE_MAP
-    add_chat_message(
-        "What narrative tone would you prefer?",
-        options=list(tone_map.keys()),
-        step="tone"
-    )
-
-def step_premise():
-    add_chat_message(
-        "Now, describe your core story premise (1-2 sentences):",
-        input_field=True,
-        step="premise"
-    )
-
-def step_chapters():
-    add_chat_message(
-        "How many chapters should your story have?",
-        options=["12-15 (Short Story)", "20-25 (Novella)", "30-40 (Novel)"],
-        step="chapters"
-    )
-
-def step_parameters():
-    if st.session_state.user_answers.get("content_type") == "Adult":
-        add_chat_message(
-            "Set your content parameters:",
-            options=["Mild (Suggestive)", "Medium (Explicit)", "Strong (Graphic)"],
-            step="parameters"
-        )
-    else:
-        add_chat_message(
-            "Choose complexity level:",
-            options=["Simple", "Moderate", "Complex"],
-            step="parameters"
-        )
-
-def step_characters():
-    add_chat_message(
-        "How many main characters?",
-        options=["1 (Solo)", "2 (Duo)", "3-5 (Ensemble)"],
-        step="characters"
-    )
-
-def step_review():
-    summary = f"""
-    **Story Summary**
-    - Type: {st.session_state.user_answers.get('content_type')}
-    - Genre: {st.session_state.user_answers.get('genre')}
-    - Tone: {st.session_state.user_answers.get('tone')}
-    - Chapters: {st.session_state.user_answers.get('chapters')}
-    - Characters: {st.session_state.user_answers.get('characters')}
-    """
-    add_chat_message(
-        f"Review your settings:\n{summary}\n\nReady to create?",
-        options=["Start Generation", "Make Changes"],
-        step="review"
-    )
-
-def step_generation():
-    if st.session_state.generation_status != "complete":
-        generate_book_content()
-
-# === CHAT FUNCTIONS ===
-def add_chat_message(content, role="assistant", options=None, input_field=False, step=None):
-    msg = {"role": role, "content": content, "step": step}
-    if options: msg["options"] = options
-    if input_field: msg["input"] = True
-    st.session_state.chat_history.append(msg)
-    
-    if input_field:
-        user_input = st.chat_input("Type your story premise...")
-        if user_input:
-            handle_user_response(user_input, step)
-
-def handle_user_response(response, step):
-    st.session_state.user_answers[step] = response
-    st.session_state.chat_history.append({"role": "user", "content": response})
-    st.session_state.current_step += 1
-    st.experimental_rerun()
-
-# === GENERATION FUNCTIONS ===
-def generate_book_content():
-    st.session_state.generation_status = "in_progress"
-    
-    with st.status("🚀 Launching Story Generation...", expanded=True) as status:
-        try:
-            # Generate Outline
-            st.write("📖 Crafting Story Structure...")
-            st.session_state.outline = generate_story_outline()
-            time.sleep(1)
-            
-            # Create Characters
-            st.write("👥 Developing Characters...")
-            st.session_state.characters = generate_character_profiles()
-            time.sleep(0.8)
-            
-            # Generate Cover
-            st.write("🎨 Designing Cover Art...")
-            st.session_state.cover = generate_cover_image()
-            
-            # Generate Chapters
-            st.write("📝 Writing Chapters...")
-            for i, chapter in enumerate(st.session_state.outline):
-                st.session_state.book[f"Chapter {i+1}"] = generate_chapter_content(chapter)
-                st.session_state.gen_progress = (i+1)/len(st.session_state.outline)
-                time.sleep(0.2)
-            
-            status.update(label="✅ Generation Complete!", state="complete")
-            st.session_state.generation_status = "complete"
-            st.balloons()
-            
-        except Exception as e:
-            st.error(f"Generation Failed: {str(e)}")
-            st.session_state.generation_status = "error"
-
-def generate_story_outline():
-    # Simulated API call
-    return [f"Chapter {i+1}" for i in range(15)]
-
-def generate_character_profiles():
-    # Simulated character generation
-    return [{
-        "name": "Elena Voss",
-        "role": "Protagonist",
-        "description": "Tech-witch with hidden agenda"
-    }]
-
-def generate_cover_image():
-    prompt = f"{st.session_state.user_answers['genre']} book cover"
-    return generate_image(prompt, "Stable Diffusion XL", "cover")
-
-def generate_image(prompt, model_name, section):
-    try:
-        model = NORMAL_IMAGE_MODELS.get(model_name)
-        output = replicate.run(model, input={
-            "prompt": prompt,
-            "width": IMAGE_SIZE[0],
-            "height": IMAGE_SIZE[1]
-        })
-        return Image.open(BytesIO(requests.get(output[0]).content))
-    except:
-        return Image.new("RGB", IMAGE_SIZE, color="#2d3047")
-
-def create_zip_package():
-    with NamedTemporaryFile(delete=False) as tmp:
-        with zipfile.ZipFile(tmp, 'w') as zipf:
-            # Add generated content
-            zipf.writestr("book.json", json.dumps(st.session_state.book))
-            zipf.writestr("characters.json", json.dumps(st.session_state.characters))
-        return open(tmp.name, "rb").read()
-
-def finalize_creation():
-    st.header("📖 Generated Content Preview")
-    
-    with st.expander("Book Cover", expanded=True):
-        if st.session_state.cover:
-            st.image(st.session_state.cover, use_column_width=True)
-    
-    with st.expander("Character Profiles"):
-        for char in st.session_state.characters:
-            st.markdown(f"### {char['name']}")
-            st.write(char['description'])
-    
-    with st.expander("Chapter Preview"):
-        chap_select = st.selectbox("Select Chapter", list(st.session_state.book.keys()))
-        st.write(st.session_state.book[chap_select])
-
-# === INITIALIZATION ===
 if __name__ == "__main__":
-    if not st.session_state.user_answers:
-        st.session_state.user_answers = {}
-    if not st.session_state.chat_history:
-        st.session_state.chat_history = []
-    
     main_interface()
