@@ -1,292 +1,331 @@
-# main.py - NarrativaX
-import os
-import json
-import requests
-import zipfile
-import random
-import replicate
-import base64
-import time
-import warnings
-from html import escape
-from docx import Document
-from docx.shared import Inches
-from fpdf import FPDF
-from fpdf.enums import XPos, YPos
-from tempfile import NamedTemporaryFile
-from gtts import gTTS
-from PIL import Image
-from io import BytesIO
+# main.py
 import streamlit as st
+import requests
+import json
+import time
+from gtts import gTTS
+from io import BytesIO
+import uuid
+from datetime import datetime
 
-# === CONSTANTS ===
-FONT_PATHS = {
-    "regular": "fonts/NotoSans-Regular.ttf",
-    "bold": "fonts/NotoSans-Bold.ttf"
-}
-MAX_TOKENS = 2500
-IMAGE_SIZE = (768, 1024)
-SAFE_LOADING_MESSAGES = [
-    "Sharpening quills...", "Mixing metaphorical ink...",
-    "Convincing characters to behave...", "Battling clichés...",
-    "Summoning muses...", "Where we're going, we don't need chapters..."
-]
+# ========== App Configuration ==========
+st.set_page_config(
+    page_title="Narrativax Pro",
+    page_icon="🧙♂️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-TONE_MAP = {
-    "Romantic": "sensual, romantic, literary",
-    "NSFW": "explicit, erotic, adult",
-    "Wholesome": "uplifting, warm, feel-good",
-    "Suspenseful": "tense, thrilling, page-turning",
-    "Philosophical": "deep, reflective, thoughtful",
-    "Explicit": "graphic, sexually explicit, adult content",
-    "Provocative": "suggestive, tantalizing, boundary-pushing",
-    "Motivational": "inspirational, personal growth, powerful",
-    "Educational": "insightful, informative, structured",
-    "Satirical": "humorous, ironic, critical",
-    "Professional": "formal, business-like, articulate",
-    "Instructive": "clear, structured, motivational",
-    "Authoritative": "firm, knowledgeable, professional",
-    "Conversational": "relatable, friendly, informal",
-    "Reflective": "thoughtful, introspective, wise"
+# ========== Constants ==========
+GENRES = {
+    "Mainstream": ["Fantasy", "Sci-Fi", "Mystery", "Historical", "Adventure"],
+    "Adult": ["Noir", "Psychological Thriller", "Dark Fantasy", "Dystopian", "Gothic"]
 }
 
-GENRES = [
-    "Personal Development", "Business", "Memoir", "Self-Help", "Productivity",
-    "Adventure", "Romance", "Sci-Fi", "Mystery", "Fantasy", "Horror",
-    "NSFW", "Erotica", "Historical Fiction", "Philosophy", "Psychology",
-    "Self-Discipline", "Time Management", "Wealth Building", "Confidence",
-    "Mindfulness", "Goal Setting", "Stoicism", "Creativity",
-    "Fitness & Health", "Habits", "Social Skills", "Leadership", "Focus",
-    "Decision-Making", "Public Speaking", "Mental Clarity",
-    "Erotic Romance", "BDSM", "Taboo Fantasy", "Adult Comedy",
-    "Sexual Education", "Kink Exploration", "Polyamory Studies"
-]
-
-IMAGE_MODELS = {
-    "Realistic Vision v5.1": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
-    "Reliberate V3 (NSFW)": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
-    "AbsoluteReality v1.8.1": "lucataco/absolutereality-v1-8-1:1db0b52c6b8325956a5c1d0ae2d97363212f2d0d5f1e5e2c7d2b2c6c048d0f1"
+OPENROUTER_MODELS = {
+    "Claude-3 Opus": "anthropic/claude-3-opus",
+    "GPT-4 Turbo": "openai/gpt-4-turbo",
+    "Llama3-70B": "meta-llama/llama-3-70b-instruct"
 }
 
-ADULT_MODELS = [
-    "leptonai/llama3-70b",
-    "cognitivecomputations/dolphin-2.6-mistral-7b",
-    "openchat/openchat-7b",
-    "undi95/remm-slerp-l2-13b"
-]
+# ========== Session State Management ==========
+def initialize_session():
+    session_defaults = {
+        "characters": [],
+        "stories": [],
+        "current_story": "",
+        "adult_mode": False,
+        "selected_model": "anthropic/claude-3-opus",
+        "api_key": "",
+        "editing_char": None,
+        "character_versions": {}
+    }
+    
+    for key, value in session_defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
-# === SESSION STATE ===
-for key in ['book', 'outline', 'cover', 'characters', 'gen_progress', 'image_cache', 'adult_mode']:
-    st.session_state.setdefault(key, {} if key == 'image_cache' else None)
+initialize_session()
 
-# === API CONFIGURATION ===
-def validate_api_keys():
-    required_keys = ['OPENROUTER_API_KEY', 'REPLICATE_API_TOKEN']
-    missing = [key for key in required_keys if key not in st.secrets]
-    if missing:
-        st.error(f"Missing API keys in secrets: {', '.join(missing)}")
-        st.stop()
-
-validate_api_keys()
-os.environ["REPLICATE_API_TOKEN"] = st.secrets["REPLICATE_API_TOKEN"]
-
-# === ENHANCED FUNCTIONALITY ===
-def generate_continuation(chapter_num):
-    previous_content = "\n".join([st.session_state.book[f"Chapter {i}"] for i in range(1, chapter_num)])
-    prompt = f"Continue Chapter {chapter_num} maintaining continuity with previous content:\n{previous_content}\n\nNew content:"
-    return call_openrouter(prompt, st.session_state.gen_progress['model'])
-
-def regenerate_chapter(chapter_num):
-    chapter_key = f"Chapter {chapter_num}"
-    prompt = f"Rewrite {chapter_key} with different approach. Current content:\n{st.session_state.book[chapter_key]}"
-    return call_openrouter(prompt, st.session_state.gen_progress['model'])
-
-def handle_image_prompt(prompt):
-    if st.session_state.adult_mode:
-        return f"{prompt} [NSFW, explicit sexual content, detailed anatomy]"
-    return prompt
-
-# === MODIFIED CORE FUNCTIONALITY ===
-def generate_book_content():
-    config = st.session_state.gen_progress
-    genre = config['genre']
-    is_dev = genre in ["Personal Development", "Self-Help", "Productivity"]
-    progress_bar = st.progress(0)
+# ========== AI Integration Core ==========
+def openrouter_handler(prompt: str, system_prompt: str = "") -> str:
+    """Handle OpenRouter API calls with full error handling"""
+    if not st.session_state.api_key:
+        st.error("🔑 Missing API Key! Add it in the sidebar.")
+        return ""
+    
+    headers = {
+        "Authorization": f"Bearer {st.session_state.api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": st.session_state.selected_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.7
+    }
     
     try:
-        total_steps = 4 + (config['chapters'] * (2 if is_dev else 3))
-        current_step = 0
-        
-        # Premise Generation
-        current_step += 1
-        progress_bar.progress(current_step/total_steps, text="🌟 Building your book idea...")
-        premise = call_openrouter(
-            f"Develop a {genre} book idea: {escape(config['prompt'])}",
-            config['model']
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=45
         )
-        if not premise:
-            raise Exception("Failed to generate premise")
-        
-        # Enhanced Outline Generation
-        current_step += 1
-        progress_bar.progress(current_step/total_steps, text="🗂️ Generating detailed outline...")
-        outline_prompt = (
-            f"Write comprehensive non-fiction outline for {genre} book with chapter progression. Prompt: {config['prompt']}. Tone: {TONE_MAP[config['tone']]}"
-            if is_dev else
-            f"Create detailed fictional outline for {TONE_MAP[config['tone']]} {genre} story. Include 5-7 plot points per chapter and character development arcs."
-        )
-        st.session_state.outline = call_openrouter(outline_prompt, config['model'])
-        if not st.session_state.outline:
-            raise Exception("Failed to generate outline")
-        
-        # Chapter Generation with Continuity
-        book = {}
-        previous_content = ""
-        for chapter_num in range(1, config['chapters'] + 1):
-            current_step += 1
-            progress_text = random.choice(SAFE_LOADING_MESSAGES)
-            progress_bar.progress(current_step/total_steps, text=f"✍️ Writing Chapter {chapter_num}... {progress_text}")
-            
-            chapter_prompt = (
-                f"Write Chapter {chapter_num} for {genre} book. Previous content: {previous_content}\nOutline: {st.session_state.outline}"
-                if is_dev else
-                f"Write Chapter {chapter_num} for {genre} story. Previous content: {previous_content}\nOutline: {st.session_state.outline}"
-            )
-            content = call_openrouter(chapter_prompt, config['model'])
-            if not content:
-                continue
-                
-            book[f"Chapter {chapter_num}"] = content
-            previous_content += f"\n\nChapter {chapter_num}:\n{content}"
-            
-            if not is_dev:
-                current_step += 1
-                progress_bar.progress(current_step/total_steps, text=f"🖼️ Creating image for Chapter {chapter_num}")
-                generate_image(
-                    handle_image_prompt(f"{content[:200]} {TONE_MAP[config['tone']]}"),
-                    config["img_model"],
-                    f"chapter_{chapter_num}"
-                )
-        
-        # Finalization
-        current_step += 1
-        progress_bar.progress(current_step/total_steps, text="📕 Creating cover art...")
-        st.session_state.cover = generate_image(
-            handle_image_prompt(f"Cover art for {genre} book: {premise}"), 
-            config["img_model"], 
-            "cover"
-        )
-        
-        st.session_state.book = book
-        progress_bar.progress(1.0, text="✅ Book generation complete!")
-        time.sleep(2)
-        
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
+    except requests.exceptions.HTTPError as e:
+        st.error(f"API Error: {e.response.text}")
     except Exception as e:
-        st.error(f"Generation Failed: {str(e)}")
-        progress_bar.progress(0.0, text="❌ Generation aborted")
-    finally:
-        progress_bar.empty()
+        st.error(f"Connection Error: {str(e)}")
+    return ""
 
-# === MODIFIED MAIN INTERFACE ===
-def main_interface():
-    try:
-        verify_fonts()
-    except FileNotFoundError as e:
-        st.error("System configuration error. Missing font files. Please contact support.")
-        st.stop()
+# ========== Intelligent Character System ==========
+class CharacterEngine:
+    @staticmethod
+    def generate_character(role: str):
+        """AI-powered character generation with version tracking"""
+        system_prompt = """You are a professional character designer. Create complex characters with:
+        - Unique personality traits
+        - Detailed backstory
+        - Internal conflicts
+        - Visual description
+        - Core motivation"""
+        
+        prompt = f"""Generate a {role} character in JSON format with these keys:
+        name, age, description, personality, backstory, secret, motivation, visual_desc"""
+        
+        response = openrouter_handler(prompt, system_prompt)
+        
+        try:
+            character = json.loads(response)
+            character.update({
+                "id": str(uuid.uuid4()),
+                "role": role,
+                "version": 1,
+                "created_at": datetime.now().isoformat()
+            })
+            return character
+        except:
+            return CharacterEngine.create_default_character(role)
 
-    st.title("NarrativaX — AI-Powered Book Creator")
+    @staticmethod
+    def create_default_character(role: str):
+        """Fallback character template"""
+        return {
+            "id": str(uuid.uuid4()),
+            "name": "Unknown",
+            "age": 30,
+            "description": "Mysterious figure",
+            "personality": "Complex",
+            "backstory": "Unknown origins",
+            "secret": "Hidden past",
+            "motivation": "Seeking truth",
+            "visual_desc": "Hooded cloak, piercing eyes",
+            "role": role,
+            "version": 1,
+            "created_at": datetime.now().isoformat()
+        }
+
+# ========== Story Generation Engine ==========
+class StoryForge:
+    @staticmethod
+    def craft_story(characters: list, genre: str, tone: str):
+        """AI-driven story generation with dynamic parameters"""
+        system_prompt = f"""You are an award-winning {genre} author. Write a story with:
+        - Engaging opening hook
+        - Character development arcs
+        - Meaningful conflicts
+        - Satisfying resolution
+        - At least two plot twists
+        Tone: {tone}"""
+        
+        character_card = "\n".join(
+            [f"### {c['name']}\n"
+             f"**Role**: {c['role'].title()}\n"
+             f"**Motivation**: {c['motivation']}\n"
+             f"**Secret**: {c['secret']}" 
+             for c in characters]
+        )
+        
+        prompt = f"""Write a 700-1000 word story featuring these characters:
+        {character_card}
+        
+        Include:
+        - Detailed setting descriptions
+        - Character interactions
+        - Dialogue sequences
+        - Pacing variations"""
+        
+        return openrouter_handler(prompt, system_prompt)
+
+# ========== UI Components ==========
+def settings_panel():
+    """Configuration sidebar"""
+    with st.sidebar:
+        st.header("⚙️ System Settings")
+        
+        # API Configuration
+        st.session_state.api_key = st.text_input(
+            "OpenRouter API Key",
+            type="password",
+            help="Get from https://openrouter.ai/keys"
+        )
+        
+        # Model Selection
+        st.session_state.selected_model = st.selectbox(
+            "AI Model",
+            options=list(OPENROUTER_MODELS.values()),
+            format_func=lambda x: list(OPENROUTER_MODELS.keys())[
+                list(OPENROUTER_MODELS.values()).index(x)
+            ]
+        )
+        
+        # Content Filters
+        st.session_state.adult_mode = st.toggle(
+            "Mature Content", 
+            help="Enable adult themes and genres"
+        )
+        
+        # System Controls
+        if st.button("🧹 Full System Reset"):
+            st.session_state.clear()
+            initialize_session()
+            st.rerun()
+
+def character_workshop():
+    """Character management interface"""
+    st.header("👥 Character Workshop")
     
-    # Adult Mode Toggle
-    st.session_state.adult_mode = st.sidebar.checkbox("🔞 Adult Mode", value=False)
-    
-    with st.form("book_form"):
-        col_main = st.columns([3, 1])
-        with col_main[0]:
-            prompt = st.text_area("🖋️ Your Idea or Prompt", height=120, 
-                                 placeholder="E.g. How to build unstoppable self-discipline...")
-        
-        # Dynamic Content Filtering
-        filtered_genres = [g for g in GENRES if ("NSFW" not in g and "Erotic" not in g) 
-                          if not st.session_state.adult_mode else GENRES]
-        filtered_tones = [t for t in TONE_MAP if t not in ["NSFW", "Explicit", "Provocative"] 
-                         if not st.session_state.adult_mode else TONE_MAP]
-        
-        col1, col2 = st.columns(2)
-        genre = col1.selectbox("📚 Choose Genre", sorted(set(filtered_genres)))
-        tone = col2.selectbox("🎭 Choose Tone", filtered_tones)
-        
-        chapters = st.slider("📖 Number of Chapters", 3, 50, 10)
-        
-        col3, col4 = st.columns(2)
-        model_list = ADULT_MODELS + ["nothingiisreal/mn-celeste-12b", "openai/gpt-4"] if st.session_state.adult_mode else ["nothingiisreal/mn-celeste-12b", "openai/gpt-4"]
-        model = col3.selectbox("🤖 LLM", model_list)
-        img_model = col4.selectbox("🖼️ Image Model", list(IMAGE_MODELS.keys()))
-        
-        if st.form_submit_button("🚀 Create Book"):
-            if not prompt.strip():
-                st.warning("Please enter your idea or prompt.")
-            else:
-                st.session_state.image_cache.clear()
-                st.session_state.gen_progress = {
-                    "prompt": prompt, 
-                    "genre": genre, 
-                    "tone": tone,
-                    "chapters": chapters, 
-                    "model": model, 
-                    "img_model": img_model
-                }
-                generate_book_content()
-
-    if st.session_state.book:
-        st.header("📚 Generated Content")
-        
-        tabs = st.tabs(["Chapters", "Outline", "Export"])
-        
-        with tabs[0]:
-            for chapter, content in st.session_state.book.items():
-                with st.expander(chapter):
-                    col1, col2 = st.columns([3, 2])
-                    with col1:
-                        st.write(content)
-                        col_btns = st.columns([1,1,2])
-                        if col_btns[0].button(f"🔄 Regenerate {chapter}", key=f"reg_{chapter}"):
-                            new_content = regenerate_chapter(int(chapter.split()[-1]))
-                            if new_content:
-                                st.session_state.book[chapter] = new_content
-                                st.rerun()
-                        if col_btns[1].button(f"🔗 Extend {chapter}", key=f"ext_{chapter}"):
-                            extended_content = generate_continuation(int(chapter.split()[-1]))
-                            if extended_content:
-                                st.session_state.book[chapter] += "\n\n" + extended_content
-                                st.rerun()
-                        with NamedTemporaryFile(suffix=".mp3") as fp:
-                            tts = gTTS(text=content, lang='en')
-                            tts.save(fp.name)
-                            st.audio(fp.name)
-                    with col2:
-                        image_key = f"chapter_{chapter.split()[-1]}"
-                        if image_key in st.session_state.image_cache:
-                            st.image(st.session_state.image_cache[image_key])
-        
-        with tabs[1]:
-            st.markdown("### Book Outline")
-            st.write(st.session_state.outline)
-            if st.button("🔄 Regenerate Outline"):
-                del st.session_state.outline
-                generate_book_content()
-        
-        with tabs[2]:
-            st.download_button(
-                label="📥 Download Complete Book",
-                data=open(create_export_zip(), "rb").read(),
-                file_name="narrativax_book.zip",
-                mime="application/zip"
-            )
-            if st.button("🧹 Clear Session"):
-                st.session_state.clear()
+    # Creation Panel
+    with st.expander("➕ Create New Character", expanded=True):
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            role = st.selectbox("Character Role", 
+                              ["protagonist", "antagonist", "supporting"])
+            if st.button("✨ Generate Character"):
+                new_char = CharacterEngine.generate_character(role)
+                st.session_state.characters.append(new_char)
                 st.rerun()
+        
+        with col2:
+            if st.session_state.characters:
+                st.info(f"Total Characters: {len(st.session_state.characters)}")
 
-# === RUN APPLICATION ===
+    # Management Panel
+    if st.session_state.characters:
+        st.divider()
+        selected_char = st.selectbox(
+            "Select Character",
+            options=[c["name"] for c in st.session_state.characters],
+            index=0
+        )
+        
+        char = next(c for c in st.session_state.characters 
+                   if c["name"] == selected_char)
+        
+        # Character Controls
+        cols = st.columns(4)
+        with cols[0]:
+            if st.button("🔄 Regenerate"):
+                new_char = CharacterEngine.generate_character(char["role"])
+                char.update(new_char)
+                st.session_state.character_versions[char["id"]] = char["version"] + 1
+                st.rerun()
+        with cols[1]:
+            if st.button("📝 Edit"):
+                st.session_state.editing_char = char["id"]
+        with cols[2]:
+            if st.button("🗑️ Delete"):
+                st.session_state.characters.remove(char)
+                st.rerun()
+        with cols[3]:
+            st.metric("Version", char["version"])
+        
+        # Editing Interface
+        if st.session_state.editing_char == char["id"]:
+            edit_character(char)
+
+def edit_character(char: dict):
+    """Interactive character editor"""
+    with st.form(f"edit_{char['id']}"):
+        cols = st.columns(2)
+        with cols[0]:
+            char["name"] = st.text_input("Name", char["name"])
+            char["age"] = st.number_input("Age", value=char["age"], min_value=1)
+            char["role"] = st.selectbox("Role", ["protagonist", "antagonist", "supporting"])
+        with cols[1]:
+            char["description"] = st.text_area("Description", char["description"])
+            char["motivation"] = st.text_input("Motivation", char["motivation"])
+            char["secret"] = st.text_input("Secret", char["secret"])
+        
+        if st.form_submit_button("💾 Save Changes"):
+            char["version"] += 1
+            st.session_state.editing_char = None
+            st.rerun()
+
+def story_interface():
+    """Main story generation interface"""
+    st.header("📜 Story Forge")
+    
+    with st.form("story_config"):
+        cols = st.columns(3)
+        with cols[0]:
+            genre_type = "Adult" if st.session_state.adult_mode else "Mainstream"
+            genre = st.selectbox("Genre", GENRES[genre_type])
+        with cols[1]:
+            tone = st.select_slider("Narrative Tone", 
+                                  ["Whimsical", "Neutral", "Dark", "Suspenseful"])
+        with cols[2]:
+            length = st.selectbox("Story Length", 
+                                ["Short (500 words)", "Medium (1000 words)", "Long (2000 words)"])
+        
+        if st.form_submit_button("🔥 Generate Story"):
+            if len(st.session_state.characters) < 1:
+                st.error("Create at least 1 character first!")
+            else:
+                with st.spinner("🚀 Launching creative engines..."):
+                    story = StoryForge.craft_story(
+                        st.session_state.characters,
+                        genre,
+                        tone
+                    )
+                    st.session_state.current_story = story
+                    st.session_state.stories.append({
+                        "content": story,
+                        "timestamp": datetime.now().isoformat(),
+                        "characters": [c["id"] for c in st.session_state.characters]
+                    })
+    
+    if st.session_state.current_story:
+        st.divider()
+        st.subheader("Generated Story")
+        st.write(st.session_state.current_story)
+        
+        # Audio Conversion
+        if st.button("🎧 Convert to Audiobook"):
+            with st.spinner("Rendering audio..."):
+                audio_file = BytesIO()
+                tts = gTTS(st.session_state.current_story, lang="en")
+                tts.write_to_fp(audio_file)
+                st.audio(audio_file, format="audio/mp3")
+        
+        # Story History
+        with st.expander("📚 Story Archive"):
+            for idx, story in enumerate(st.session_state.stories):
+                st.markdown(f"**Story #{idx+1}** - {story['timestamp']}")
+                st.button(f"Load Story #{idx+1}", key=f"load_{idx}")
+
+# ========== Main Application ==========
+def main():
+    settings_panel()
+    character_workshop()
+    story_interface()
+    st.divider()
+    st.markdown("🧠 Powered by [OpenRouter AI](https://openrouter.ai) | v3.1.0")
+
 if __name__ == "__main__":
-    main_interface()
+    main()
