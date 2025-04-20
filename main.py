@@ -180,12 +180,11 @@ def generate_book_content():
                     handle_character_image(character, character['profile'])
         
         # Outline Generation with Characters
-        outline_prompt = f"""Create {config['chapters']}-chapter outline for {config['genre']} story.
-        Characters: {json.dumps(st.session_state.characters)}
-        Tone: {TONE_MAP['NSFW' if st.session_state.nsfw_mode else 'SFW'][config['tone']}
-        Include: Plot structure, character development milestones, key scenes"""
-        
-        st.session_state.outline = call_openrouter(outline_prompt, config['model'])
+        prompt = f"""Write {'an extension to ' if is_extension else ''}Chapter {chapter_num} for {config['genre']} story.
+        Story Context: {story_context}
+        Characters: {character_context}
+        Tone: {TONE_MAP[('NSFW' if st.session_state.nsfw_mode else 'SFW')][config['tone']]}
+        Include: Detailed scene descriptions, character development, plot progression"""
         
         # Chapter Generation with Continuity
         st.session_state.story_so_far = []
