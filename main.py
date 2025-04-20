@@ -57,7 +57,6 @@ IMAGE_MODELS = {
     "🔥 Reliberate NSFW": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29"
 }
 
-
 MODELS = {
     "🧠 MythoMax": "gryphe/mythomax-l2-13b",
     "🐬 Dolphin": "cognitivecomputations/dolphin-mixtral",
@@ -71,17 +70,23 @@ class PDFStyler(FPDF):
     def __init__(self):
         super().__init__()
         self.font_configured = False
+        self.add_font('NotoSans', style='', fname=FONT_PATHS["regular"])
+        self.add_font('NotoSans', style='B', fname=FONT_PATHS["bold"])
+        self.font_configured = True
     
     def header(self):
         if self.font_configured:
             self.set_font('NotoSans', 'B', 12)
-            self.cell(0, 10, 'NarrativaX Generated Book', 0, 1, 'C')
+            self.cell(0, 10, 'NarrativaX Generated Book', 
+                     new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+            self.ln(10)
     
     def footer(self):
         if self.font_configured:
             self.set_y(-15)
             self.set_font('NotoSans', '', 8)
-            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+            self.cell(0, 10, f'Page {self.page_no()}', 
+                     new_x=XPos.RIGHT, new_y=YPos.TOP, align='C')
 
 def initialize_state():
     defaults = {
