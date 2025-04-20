@@ -150,11 +150,12 @@ def generate_chapter(chapter_num, is_extension=False):
         for char in st.session_state.characters.values()
     ]) if st.session_state.characters else ""
     
-    prompt = f"""Write {'an extension to ' if is_extension else ''}Chapter {chapter_num} for {config['genre']} story.
-    Story Context: {story_context}
-    Characters: {character_context}
-    Tone: {TONE_MAP['NSFW' if st.session_state.nsfw_mode else 'SFW'][config['tone']}
-    Include: Detailed scene descriptions, character development, plot progression"""
+    # Chapter generation prompt
+prompt = f"""Write {'an extension to ' if is_extension else ''}Chapter {chapter_num} for {config['genre']} story.
+Story Context: {story_context}
+Characters: {character_context}
+Tone: {TONE_MAP['NSFW' if st.session_state.nsfw_mode else 'SFW'][config['tone']]}
+Include: Detailed scene descriptions, character development, plot progression"""
     
     content = call_openrouter(prompt, config['model'])
     if content:
