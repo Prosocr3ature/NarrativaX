@@ -103,7 +103,7 @@ class PDFStyler(FPDF):
     
     def header(self):
         if self.font_configured:
-            self.set_font('NotoSansB', '', 12)
+            self.set_font('NotoSans', 'B', 12)
             self.cell(0, 10, 'NarrativaX Generated Book', 0, 1, 'C')
     
     def footer(self):
@@ -281,8 +281,8 @@ def create_export_zip():
                 
                 # Configure fonts
                 try:
-                    pdf.add_font('NotoSans', '', FONT_PATHS["regular"], uni=True)
-                    pdf.add_font('NotoSansB', 'B', FONT_PATHS["bold"], uni=True)
+                    pdf.add_font('NotoSans', '', FONT_PATHS["regular"])
+                    pdf.add_font('NotoSans', 'B', FONT_PATHS["bold"])
                     pdf.font_configured = True
                 except Exception as e:
                     st.error(f"Font initialization failed: {str(e)}")
@@ -291,17 +291,17 @@ def create_export_zip():
 
                 # Title
                 title = st.session_state.gen_progress.get('prompt', 'Untitled')
-                pdf.set_font("NotoSansB", size=16)
+                pdf.set_font("NotoSans", "B", size=16)
                 pdf.cell(200, 10, text=title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.ln(10)
 
                 # Content
                 pdf.set_font("NotoSans", size=12)
                 for chapter, text in st.session_state.book.items():
-                    pdf.set_font("NotoSansB", size=14)
+                    pdf.set_font("NotoSans", "B", size=14)
                     pdf.multi_cell(w=pdf.epw, h=10, text=chapter)
                     pdf.ln(2)
-                    pdf.set_font("NotoSans", size=12)
+                    pdf.set_font("NotoSans", "", size=12)
                     pdf.multi_cell(w=pdf.epw, h=10, text=text)
                     pdf.ln(8)
 
