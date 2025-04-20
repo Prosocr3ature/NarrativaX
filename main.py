@@ -1,4 +1,3 @@
-# main.py
 import os
 import json
 import requests
@@ -120,6 +119,28 @@ def validate_environment():
         st.error(f"Replicate authentication failed: {str(e)}")
         st.stop()
 
+def create_export_zip():
+    """Packages all content into a ZIP file"""
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+        # Add text content
+        doc = Document()
+        for title, content in st.session_state.book.items():
+            doc.add_heading(title, level=1)
+            doc.add_paragraph(content)
+        with NamedTemporaryFile(suffix=".docx") as tmp:
+            doc.save(tmp.name)
+            zip_file.write(tmp.name, "book.docx")
+        
+        # Add images
+        for section, img in st.session_state.image_cache.items():
+            with NamedTemporaryFile(suffix=".jpg") as img_tmp:
+                img.save(img_tmp.name)
+                zip_file.write(img_tmp.name, f"images/{section}.jpg")
+                
+    zip_buffer.seek(0)
+    return zip_buffer
+
 # ====================
 # AI INTEGRATIONS
 # ====================
@@ -184,6 +205,48 @@ def generate_image(prompt, model_name, section):
     except Exception as e:
         st.error(f"Image Generation Failed: {str(e)}")
         return None
+
+def generate_book_content():
+    """Orchestrates the book generation process"""
+    with st.status("📖 Crafting Your Masterpiece...", expanded=True) as status:
+        try:
+            # 1. Generate Outline
+            st.write(random.choice(SAFE_LOADING_MESSAGES))
+            outline_prompt = f"""Create a {st.session_state.gen_progress['chapters']}-chapter outline for a {
+                st.session_state.gen_progress['genre']} story with {st.session_state.gen_progress['tone']
+                } tone. Story seed: {st.session_state.gen_progress['prompt']}"""
+            
+            outline = call_openrouter(outline_prompt, st.session_state.gen_progress['model'])
+            st.session_state.outline = outline
+            
+            # 2. Generate Chapters
+            chapters = outline.split("\n")[2:]  # Skip header lines
+            for i, chapter in enumerate(chapters):
+                if not chapter.strip():
+                    continue
+                st.write(f"📝 Writing {chapter.strip()}...")
+                chapter_content = call_openrouter(
+                    f"Expand this chapter in detail: {chapter}",
+                    st.session_state.gen_progress['model']
+                )
+                st.session_state.book[chapter.strip()] = chapter_content
+                st.session_state.chapter_order.append(chapter.strip())
+            
+            # 3. Generate Cover Image
+            st.write("🎨 Painting the cover...")
+            cover_prompt = f"Book cover for {st.session_state.gen_progress['prompt']}, {
+                st.session_state.gen_progress['genre']}, {st.session_state.gen_progress['tone']} style"
+            st.session_state.cover = generate_image(
+                cover_prompt,
+                st.session_state.gen_progress['img_model'],
+                "cover"
+            )
+            
+            status.update(label="✅ Book Generation Complete!", state="complete")
+            
+        except Exception as e:
+            status.update(label="❌ Generation Failed", state="error")
+            st.error(f"Generation failed: {str(e)}")
 
 # ====================
 # UI COMPONENTS
@@ -372,7 +435,7 @@ def main_interface():
                     zip_path = create_export_zip()
                     st.download_button(
                         label="⬇️ Download ZIP",
-                        data=open(zip_path, "rb").read(),
+                        data=zip_path.getvalue(),
                         file_name="narrativax_book.zip",
                         mime="application/zip"
                     )
