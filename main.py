@@ -1,5 +1,3 @@
-# main.py
-
 import os
 import json
 import requests
@@ -12,7 +10,6 @@ from io import BytesIO
 from tempfile import NamedTemporaryFile
 from PIL import Image
 from docx import Document
-from fpdf import FPDF
 from gtts import gTTS, gTTSError
 
 import streamlit as st
@@ -69,10 +66,11 @@ MODELS = {
 }
 
 PRESETS = {
-    "Vanilla":  0,
-    "NSFW":     50,
-    "Hardcore": 100
+    "Vanilla": 0,
+    "NSFW":    50,
+    "Hardcore":100
 }
+
 
 # ====================
 # STATE INIT
@@ -85,7 +83,7 @@ def initialize_state():
         "outline":              "",
         "cover":                None,
         "image_cache":          {},
-        "characters":           [],
+        "characters":           [],  # list of dicts: {"desc": str, "img": PIL.Image or None}
         "gen_progress":         {},
         "selected_genre":       None,
         "selected_subgenres":   [],
@@ -98,6 +96,7 @@ def initialize_state():
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
 
 # ====================
 # ENV CHECK
@@ -112,6 +111,7 @@ def validate_environment():
     except Exception as e:
         st.error(f"Replicate auth failed: {e}")
         st.stop()
+
 
 # ====================
 # ZIP EXPORT
@@ -132,6 +132,7 @@ def create_export_zip():
                 z.write(tmp.name, f"images/{sec}.jpg")
     buf.seek(0)
     return buf
+
 
 # ====================
 # AI / IMG CALLS
@@ -159,6 +160,7 @@ def call_openrouter(prompt, model_key):
         st.error(f"API Error: {e}")
         return ""
 
+
 def generate_image(prompt, model_key, section):
     version = IMAGE_MODELS[model_key]
     neg = "text, watermark" if "NSFW" in model_key else ""
@@ -180,7 +182,18 @@ def generate_image(prompt, model_key, section):
         st.error(f"Image generation failed: {e}")
         return None
 
+
+# ====================
+# BOOK & CHARACTER GENERATION
+# ====================
 def generate_book_content():
+    # reset previous content
+    st.session_state.book = {}
+    st.session_state.chapter_order = []
+    st.session_state.image_cache = {}
+    st.session_state.cover = None
+    st.session_state.characters = []
+
     with st.spinner("📖 Crafting Your Masterpiece..."):
         try:
             st.write(random.choice(SAFE_LOADING_MESSAGES))
@@ -196,8 +209,10 @@ def generate_book_content():
             st.session_state.outline = outline
 
             # Chapters
-            lines = [l.strip() for l in outline.split("\n") if l.strip()][2:]
-            for chap in lines:
+            lines = [l.strip() for l in outline.split("\n") if l.strip()]
+            # assume first lines are header, drop until chapters list
+            chapters_list = [l for l in lines if l.lower().startswith("chapter")]
+            for chap in chapters_list:
                 st.write(f"📝 Writing {chap}…")
                 content = call_openrouter(f"Expand this chapter: {chap}", gp["model"])
                 st.session_state.book[chap] = content
@@ -211,8 +226,18 @@ def generate_book_content():
             )
             st.session_state.cover = cover
 
+            # Automatic character generation
+            st.write("🧑 Generating characters…")
+            chars_text = call_openrouter(
+                f"Generate 3 characters for story seed: {gp['prompt']} in {gp['genre']}, tone {gp['tone']}",
+                gp["model"]
+            )
+            for c in [c.strip() for c in chars_text.split("\n\n") if c.strip()]:
+                st.session_state.characters.append({"desc": c, "img": None})
+
         except Exception as e:
             st.error(f"Generation error: {e}")
+
 
 # ====================
 # MAIN UI
@@ -229,10 +254,11 @@ def main_interface():
       .logo-container { text-align: center; margin: 12px 0; }
       .stHeader, .stSubheader { margin: 4px 0 !important; }
       .stButton > button { margin: 4px !important; }
+      .stExpander > .stMarkdown { margin-bottom: 4px !important; }
     </style>
     """, unsafe_allow_html=True)
 
-    # Sidebar controls
+    # Sidebar
     with st.sidebar:
         st.markdown("### 🔧 Session")
         if st.session_state.last_saved:
@@ -243,7 +269,8 @@ def main_interface():
                 with open("session.json", "w") as f:
                     json.dump({
                         "book":     st.session_state.book,
-                        "chapters": st.session_state.chapter_order
+                        "chapters": st.session_state.chapter_order,
+                        "characters": st.session_state.characters
                     }, f)
                 st.session_state.last_saved = time.time()
                 st.success("Saved!")
@@ -253,6 +280,7 @@ def main_interface():
                     d = json.load(open("session.json"))
                     st.session_state.book = d["book"]
                     st.session_state.chapter_order = d["chapters"]
+                    st.session_state.characters = d.get("characters", [])
                     st.success("Loaded!")
                 except Exception as e:
                     st.error(f"Load failed: {e}")
@@ -260,16 +288,16 @@ def main_interface():
             if st.button("🆕 New"):
                 for k in ("book","chapter_order","outline","cover","image_cache","characters","gen_progress"):
                     st.session_state[k] = {} if isinstance(st.session_state[k], dict) else []
-                st.session_state.selected_genre     = None
+                st.session_state.selected_genre = None
                 st.session_state.selected_subgenres = []
-                st.session_state.selected_tone      = None
-                st.session_state.last_saved         = None
+                st.session_state.selected_tone = None
+                st.session_state.last_saved = None
 
-    # Logo centered
+    # Logo
     logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
     if os.path.exists(logo_path):
         st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-        st.image(logo_path, width=240, use_container_width=True)
+        st.image(logo_path, width=240)
         st.markdown('</div>', unsafe_allow_html=True)
 
     st.title("📖 NarrativaX – AI‑Powered Story Studio")
@@ -281,14 +309,12 @@ def main_interface():
         index=list(MODELS.keys()).index(st.session_state.selected_model),
         horizontal=True, label_visibility="collapsed"
     )
-
     st.subheader("🖼️ Image Model")
     st.session_state.selected_image_model = st.radio(
         "", list(IMAGE_MODELS.keys()),
         index=list(IMAGE_MODELS.keys()).index(st.session_state.selected_image_model),
         horizontal=True, label_visibility="collapsed"
     )
-
     st.subheader("🔞 Content Intensity")
     preset = st.radio(
         "", list(PRESETS.keys()),
@@ -296,7 +322,7 @@ def main_interface():
         horizontal=True, label_visibility="collapsed"
     )
     st.session_state.content_preset = preset
-    st.session_state.explicit_level   = PRESETS[preset]
+    st.session_state.explicit_level = PRESETS[preset]
 
     # Genre & subgenres
     st.subheader("🎭 Genre & Sub‑Genres")
@@ -304,8 +330,7 @@ def main_interface():
     if genre in GENRES:
         st.session_state.selected_genre = genre
         subs = st.multiselect(
-            "Pick sub‑genres",
-            options=GENRES[genre],
+            "Pick sub‑genres", options=GENRES[genre],
             default=st.session_state.selected_subgenres
         )
         st.session_state.selected_subgenres = subs
@@ -346,7 +371,7 @@ def main_interface():
     if st.session_state.chapter_order:
         tabs = st.tabs(["📖 Chapters","🎙️ Narration","🖼️ Artwork","📤 Export","👥 Characters"])
 
-        # ── Chapters
+        # Chapters
         with tabs[0]:
             st.subheader("Chapter Manager")
             new_order = sort_items(st.session_state.chapter_order)
@@ -354,17 +379,18 @@ def main_interface():
                 st.session_state.chapter_order = new_order
 
             for title in st.session_state.chapter_order:
-                flag = f"edit_{title}"
-                if flag not in st.session_state:
-                    st.session_state[flag] = False
-
+                edit_flag = f"edit_{title}"
+                if edit_flag not in st.session_state:
+                    st.session_state[edit_flag] = False
                 with st.expander(title):
-                    if st.session_state[flag]:
-                        txt = st.text_area("", value=st.session_state.book[title],
-                                           height=300, label_visibility="collapsed")
+                    if st.session_state[edit_flag]:
+                        txt = st.text_area(
+                            "", st.session_state.book[title], height=300,
+                            label_visibility="collapsed"
+                        )
                         if st.button("💾 Save", key=f"save_{title}"):
                             st.session_state.book[title] = txt
-                            st.session_state[flag] = False
+                            st.session_state[edit_flag] = False
                             st.success("Saved.")
                     else:
                         st.write(st.session_state.book[title])
@@ -379,18 +405,14 @@ def main_interface():
                             st.session_state.book[title] += "\n\n" + more
                     with c2:
                         if st.button("✏️ Edit", key=f"editbtn_{title}"):
-                            st.session_state[flag] = True
-                    # ── Delete without experimental rerun
+                            st.session_state[edit_flag] = True
                     with c3:
                         if st.button("🗑️ Delete", key=f"del_{title}"):
                             st.session_state.book.pop(title, None)
-                            st.session_state.chapter_order = [
-                                t for t in st.session_state.chapter_order if t != title
-                            ]
-                            st.session_state.image_cache.pop(title, None)
-                            st.success(f"Deleted chapter: {title}")
+                            st.session_state.chapter_order.remove(title)
+                            st.success(f"Deleted {title}")
 
-        # ── Narration
+        # Narration
         with tabs[1]:
             st.subheader("Audio Narration")
             for title in st.session_state.chapter_order:
@@ -404,17 +426,26 @@ def main_interface():
                     except gTTSError:
                         st.error("TTS failed.")
 
-        # ── Artwork
+        # Artwork
         with tabs[2]:
             st.subheader("Generated Artwork")
             if st.session_state.cover:
                 st.image(st.session_state.cover, caption="Cover", use_container_width=True)
+                if st.button("🌟 Regenerate Cover"):
+                    cover = generate_image(
+                        f"Cover for {st.session_state.gen_progress['prompt']}, "
+                        f"{st.session_state.gen_progress['genre']} "
+                        f"({', '.join(st.session_state.gen_progress['subgenres'])}), "
+                        f"{st.session_state.gen_progress['tone']}",
+                        st.session_state.selected_image_model, "cover"
+                    )
+                    st.session_state.cover = cover
             cols = st.columns(3)
             for i, (sec, img) in enumerate(st.session_state.image_cache.items()):
                 with cols[i % 3]:
                     st.image(img, caption=sec.title(), use_container_width=True)
 
-        # ── Export
+        # Export
         with tabs[3]:
             st.subheader("Export")
             if st.button("📦 Download ZIP", use_container_width=True):
@@ -426,33 +457,47 @@ def main_interface():
                     mime="application/zip"
                 )
 
-        # ── Characters
+        # Characters
         with tabs[4]:
             st.subheader("Character Development")
-            if st.button("➕ Generate Characters", use_container_width=True):
-                chars = call_openrouter(
-                    f"Generate 3 characters for {st.session_state.gen_progress['prompt']}",
+            if st.button("➕ Add Character"):
+                new_char = call_openrouter(
+                    f"Create one character profile for seed: {st.session_state.gen_progress.get('prompt','')}",
                     st.session_state.selected_model
-                )
-                for c in chars.split("\n\n"):
-                    if c.strip():
-                        st.session_state.characters.append(c.strip())
+                ).strip()
+                if new_char:
+                    st.session_state.characters.append({"desc": new_char, "img": None})
+
             for idx, char in enumerate(st.session_state.characters):
-                with st.expander(f"🧑 Char #{idx+1}"):
+                key_prefix = f"char_{idx}"
+                with st.expander(f"🧑 Character #{idx+1}"):
                     c1, c2 = st.columns([3, 1])
                     with c1:
-                        desc = st.text_area("", value=char, height=150,
-                                           key=f"ch_{idx}", label_visibility="collapsed")
-                        if desc != char:
-                            st.session_state.characters[idx] = desc
+                        desc = st.text_area(
+                            "", value=char["desc"], height=150,
+                            key=f"{key_prefix}_desc", label_visibility="collapsed"
+                        )
+                        if desc != char["desc"]:
+                            st.session_state.characters[idx]["desc"] = desc
                     with c2:
-                        if st.button("🎨 Visualize", key=f"vis_{idx}"):
-                            img = generate_image(desc,
-                                                 st.session_state.selected_image_model,
-                                                 f"char_{idx}")
+                        if st.button("🔄 Regenerate", key=f"{key_prefix}_regen"):
+                            new_desc = call_openrouter(
+                                f"Regenerate character profile: {char['desc']}",
+                                st.session_state.selected_model
+                            ).strip()
+                            if new_desc:
+                                st.session_state.characters[idx]["desc"] = new_desc
+                        if st.button("🎨 Visualize", key=f"{key_prefix}_vis"):
+                            img = generate_image(
+                                char["desc"], st.session_state.selected_image_model, f"char_{idx}"
+                            )
                             if img:
+                                st.session_state.characters[idx]["img"] = img
                                 st.image(img, use_container_width=True)
-
+                        if st.button("🗑️ Delete", key=f"{key_prefix}_del"):
+                            st.session_state.characters.pop(idx)
+                            st.success("Deleted character")
+                            break  # avoid index errors after deletion
 
 if __name__ == "__main__":
     main_interface()
