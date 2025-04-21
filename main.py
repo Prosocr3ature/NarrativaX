@@ -11,7 +11,6 @@ from tempfile import NamedTemporaryFile
 from PIL import Image
 from docx import Document
 from fpdf import FPDF
-from fpdf.enums import XPos, YPos
 from gtts import gTTS, gTTSError
 
 import streamlit as st
@@ -186,12 +185,12 @@ def generate_image(prompt, model_key, section):
 
 
 def generate_book_content():
-    with st.status("📖 Crafting Your Masterpiece...", expanded=True) as status:
+    with st.spinner("📖 Crafting Your Masterpiece..."):
         try:
             st.write(random.choice(SAFE_LOADING_MESSAGES))
             gp = st.session_state.gen_progress
 
-            # -- Outline
+            # Outline
             outline_prompt = (
                 f"Create a {gp['chapters']}-chapter outline for "
                 f"{gp['genre']} ({', '.join(gp['subgenres'])}) "
@@ -200,7 +199,7 @@ def generate_book_content():
             outline = call_openrouter(outline_prompt, gp["model"])
             st.session_state.outline = outline
 
-            # -- Chapters
+            # Chapters
             lines = [l.strip() for l in outline.split("\n") if l.strip()][2:]
             for chap in lines:
                 st.write(f"📝 Writing {chap}…")
@@ -208,7 +207,7 @@ def generate_book_content():
                 st.session_state.book[chap] = content
                 st.session_state.chapter_order.append(chap)
 
-            # -- Cover Image
+            # Cover
             st.write("🎨 Painting the cover…")
             cover = generate_image(
                 f"Cover for {gp['prompt']}, {gp['genre']} ({', '.join(gp['subgenres'])}), {gp['tone']}",
@@ -216,36 +215,33 @@ def generate_book_content():
             )
             st.session_state.cover = cover
 
-            status.update(label="✅ Book Complete!", state="complete")
         except Exception as e:
-            status.update(label="❌ Generation Failed", state="error")
             st.error(f"Generation error: {e}")
 
 
 # ====================
-# UI
+# MAIN UI
 # ====================
 def main_interface():
     st.set_page_config(page_title="NarrativaX", page_icon="📚", layout="wide")
     initialize_state()
     validate_environment()
 
-    # -- CSS fixes
+    # CSS tweaks
     st.markdown("""
     <style>
       .block-container { padding: 8px 16px; }
-      .logo-container { text-align: center; margin: 8px 0; }
+      .logo-container { text-align: center; margin: 12px 0; }
       .stHeader, .stSubheader { margin: 4px 0 !important; }
-      .stButton > button { margin: 2px 4px !important; }
-      textarea, .stTextArea textarea { background: #fafafa !important; color: #000 !important; }
+      .stButton > button { margin: 4px !important; }
     </style>
     """, unsafe_allow_html=True)
 
-    # -- Sidebar: Save / Load / New
+    # Sidebar controls
     with st.sidebar:
         st.markdown("### 🔧 Session")
         if st.session_state.last_saved:
-            st.caption(f"⏱️ Last saved: {time.strftime('%Y-%m-%d %H:%M')}")
+            st.caption(f"⏱️ Last saved: {time.strftime('%Y-%m-%d %H:%M', time.localtime(st.session_state.last_saved))}")
         c1, c2, c3 = st.columns(3)
         with c1:
             if st.button("💾 Save"):
@@ -267,7 +263,7 @@ def main_interface():
                     st.error(f"Load failed: {e}")
         with c3:
             if st.button("🆕 New"):
-                for k in ("book", "chapter_order", "outline", "cover", "image_cache", "characters", "gen_progress"):
+                for k in ("book","chapter_order","outline","cover","image_cache","characters","gen_progress"):
                     st.session_state[k] = {} if isinstance(st.session_state[k], dict) else []
                 st.session_state.selected_genre = None
                 st.session_state.selected_subgenres = []
@@ -275,7 +271,7 @@ def main_interface():
                 st.session_state.last_saved = None
                 st.experimental_rerun()
 
-    # -- Centered logo
+    # Logo centered
     logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
     if os.path.exists(logo_path):
         st.markdown('<div class="logo-container">', unsafe_allow_html=True)
@@ -284,69 +280,59 @@ def main_interface():
 
     st.title("📖 NarrativaX – AI‑Powered Story Studio")
 
-    # -- Model & Intensity presets
+    # Model & presets
     st.subheader("🤖 AI Model")
     st.session_state.selected_model = st.radio(
-        label="", options=list(MODELS.keys()),
+        "", list(MODELS.keys()),
         index=list(MODELS.keys()).index(st.session_state.selected_model),
         horizontal=True, label_visibility="collapsed"
     )
     st.subheader("🖼️ Image Model")
     st.session_state.selected_image_model = st.radio(
-        label="", options=list(IMAGE_MODELS.keys()),
+        "", list(IMAGE_MODELS.keys()),
         index=list(IMAGE_MODELS.keys()).index(st.session_state.selected_image_model),
         horizontal=True, label_visibility="collapsed"
     )
     st.subheader("🔞 Content Intensity")
     preset = st.radio(
-        label="", options=list(PRESETS.keys()),
+        "", list(PRESETS.keys()),
         index=list(PRESETS.keys()).index(st.session_state.content_preset),
         horizontal=True, label_visibility="collapsed"
     )
     st.session_state.content_preset = preset
     st.session_state.explicit_level = PRESETS[preset]
 
-    # -- Genre & subgenres
+    # Genre & subgenres
     st.subheader("🎭 Genre & Sub‑Genres")
-    genre = st.selectbox(
-        label="Main Genre", options=["-- choose --"] + list(GENRES.keys()),
-        label_visibility="visible"
-    )
+    genre = st.selectbox("Main Genre", ["-- choose --"] + list(GENRES.keys()))
     if genre in GENRES:
         st.session_state.selected_genre = genre
         subs = st.multiselect(
-            label="Pick sub‑genres",
-            options=GENRES[genre],
+            "Pick sub‑genres", options=GENRES[genre],
             default=st.session_state.selected_subgenres
         )
         st.session_state.selected_subgenres = subs
 
-    # -- Tone
+    # Tone
     st.subheader("🎨 Tone")
-    tone = st.selectbox(
-        label="Narrative Tone", options=["-- choose --"] + list(TONES.keys()),
-        label_visibility="visible"
-    )
+    tone = st.selectbox("Narrative Tone", ["-- choose --"] + list(TONES.keys()))
     if tone in TONES:
         st.session_state.selected_tone = tone
 
-    # -- Chapters & prompt
+    # Chapters & seed
     st.subheader("📑 Chapters & Seed")
     c1, c2 = st.columns([1, 3])
     with c1:
-        chapters = st.slider(
-            label="", min_value=3, max_value=30, value=10,
-            label_visibility="collapsed"
-        )
+        chapters = st.slider("", 3, 30, 10, label_visibility="collapsed")
     with c2:
         prompt = st.text_input(
-            label="", placeholder="A dystopian romance between an AI and human rebel…",
+            "", placeholder="A dystopian romance between an AI and human rebel…",
             label_visibility="collapsed"
         )
 
     if st.button("🚀 Generate Book", use_container_width=True, type="primary"):
-        if not (st.session_state.selected_genre and st.session_state.selected_tone):
-            st.warning("Please choose both genre and tone first.")
+        if not (st.session_state.selected_genre and st.session_state.selected_tone and prompt.strip()):
+            st.warning("Please choose genre, tone, and enter a seed.")
         else:
             st.session_state.gen_progress = {
                 "prompt":    prompt.strip(),
@@ -359,7 +345,7 @@ def main_interface():
             }
             generate_book_content()
 
-    # -- Content tabs
+    # Content tabs
     if st.session_state.chapter_order:
         tabs = st.tabs(["📖 Chapters","🎙️ Narration","🖼️ Artwork","📤 Export","👥 Characters"])
 
@@ -377,20 +363,16 @@ def main_interface():
                 with st.expander(title):
                     if st.session_state[edit_flag]:
                         txt = st.text_area(
-                            label="", value=st.session_state.book[title],
-                            height=300, label_visibility="collapsed"
+                            "", st.session_state.book[title], height=300,
+                            label_visibility="collapsed"
                         )
                         if st.button("💾 Save", key=f"save_{title}"):
                             st.session_state.book[title] = txt
                             st.session_state[edit_flag] = False
                             st.success("Saved.")
                     else:
-                        html = st.session_state.book[title].replace("\n","<br>")
-                        st.markdown(
-                            f"<div style='background:#fafafa;color:#000;padding:12px;border-radius:5px;'>"
-                            f"{html}</div>",
-                            unsafe_allow_html=True
-                        )
+                        st.write(st.session_state.book[title])
+
                     c1, c2, c3 = st.columns(3)
                     with c1:
                         if st.button("➡️ Continue", key=f"cont_{title}"):
@@ -399,6 +381,7 @@ def main_interface():
                                 st.session_state.selected_model
                             )
                             st.session_state.book[title] += "\n\n" + more
+                            st.experimental_rerun()
                     with c2:
                         if st.button("✏️ Edit", key=f"editbtn_{title}"):
                             st.session_state[edit_flag] = True
@@ -439,7 +422,7 @@ def main_interface():
             if st.button("📦 Download ZIP", use_container_width=True):
                 buf = create_export_zip()
                 st.download_button(
-                    label="⬇️ Download ZIP",
+                    "⬇️ Download ZIP",
                     data=buf.getvalue(),
                     file_name="narrativax_book.zip",
                     mime="application/zip"
@@ -460,7 +443,8 @@ def main_interface():
                 with st.expander(f"🧑 Char #{idx+1}"):
                     c1, c2 = st.columns([3, 1])
                     with c1:
-                        desc = st.text_area(label="", value=char, height=150, key=f"ch_{idx}", label_visibility="collapsed")
+                        desc = st.text_area("", value=char, height=150,
+                                           key=f"ch_{idx}", label_visibility="collapsed")
                         if desc != char:
                             st.session_state.characters[idx] = desc
                     with c2:
@@ -468,6 +452,7 @@ def main_interface():
                             img = generate_image(desc, st.session_state.selected_image_model, f"char_{idx}")
                             if img:
                                 st.image(img, use_container_width=True)
+
 
 if __name__ == "__main__":
     main_interface()
