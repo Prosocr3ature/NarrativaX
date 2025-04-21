@@ -29,14 +29,18 @@ SAFE_LOADING_MESSAGES = [
 ]
 
 GENRES = {
-    "📖 Literary":    ["thoughtful", "reflective", "literary", "contemporary", "experimental", "historical fiction", "bildungsroman", "magical realism", "metafiction"],
-    "💖 Romance":     ["sensual", "emotional", "passionate", "historical romance", "paranormal romance", "romantic comedy", "relationship drama", "chick lit", "romantic suspense"],
-    "🔞 Adult":       ["explicit", "erotic", "provocative", "softcore", "hardcore", "fetish", "sensual erotica", "LGBTQ+", "BDSM"],
-    "🚀 Sci‑Fi":       ["futuristic", "technological", "cosmic", "cyberpunk", "space opera", "dystopian", "time travel", "military sci‑fi", "first contact"],
-    "🪄 Fantasy":     ["magical", "epic", "mythical", "urban fantasy", "dark fantasy", "high fantasy", "fairy tale", "sword & sorcery", "steampunk"],
-    "🔪 Thriller":    ["tense", "suspenseful", "dark", "psychological thriller", "crime", "espionage", "mystery", "legal thriller", "medical thriller"],
-    "💼 Business":    ["professional", "insightful", "strategic", "entrepreneurship", "leadership", "finance", "marketing", "management", "startups"],
-    "🌱 Self‑Help":    ["motivational", "inspirational", "practical", "mindfulness", "productivity", "wellness", "habit building", "self-improvement"]
+    "📖 Literary":    ["thoughtful", "reflective", "contemporary", "historical fiction", "experimental", "bildungsroman", "metafiction", "magical realism"],
+    "💖 Romance":     ["sensual", "emotional", "historical romance", "paranormal romance", "romantic comedy", "relationship drama", "chick lit", "romantic suspense"],
+    "🔞 Adult":       ["explicit", "erotic", "softcore", "hardcore", "fetish", "sensual erotica", "LGBTQ+", "BDSM"],
+    "🚀 Sci‑Fi":      ["futuristic", "space opera", "cyberpunk", "dystopian", "time travel", "military sci‑fi", "first contact", "post‑apocalyptic"],
+    "🪄 Fantasy":     ["epic", "urban fantasy", "dark fantasy", "high fantasy", "fairy tale", "sword & sorcery", "steampunk", "mythical"],
+    "🔪 Thriller":    ["suspenseful", "psychological thriller", "crime", "espionage", "mystery", "legal thriller", "medical thriller", "noir"],
+    "🕵️ Mystery":    ["detective", "whodunit", "investigation", "sleuth", "locked‑room", "cozy mystery", "forensic"],
+    "👻 Horror":      ["supernatural", "psychological horror", "creepy", "gore", "slasher", "paranormal", "haunted house"],
+    "🏰 Historical":  ["period drama", "alternate history", "Renaissance", "Victorian", "World War", "medieval", "colonial"],
+    "💼 Business":    ["entrepreneurship", "leadership", "finance", "management", "marketing", "startups", "strategy"],
+    "🌱 Self‑Help":   ["motivational", "mindfulness", "productivity", "wellness", "habit building", "self‑improvement"],
+    "👶 Children's":  ["bedtime story", "young adult", "picture book", "coming‑of‑age", "fairy tale", "middle grade"]
 }
 
 TONES = {
@@ -56,7 +60,11 @@ TONES = {
     "💭 Reflective":     "introspective, thoughtful, meditative, pensive",
     "⚔ Heroic":          "courageous, noble, epic, valorous",
     "🌟 Optimistic":     "hopeful, bright, uplifting, positive",
-    "🗡 Vengeful":       "revenge‑driven, ruthless, dark, relentless"
+    "🗡 Vengeful":       "revenge‑driven, ruthless, dark, relentless",
+    "🎉 Celebratory":    "joyful, festive, triumphant, elated",
+    "💪 Empowering":     "strong, assertive, motivational, determined",
+    "🌊 Poetic":         "lyrical, metaphorical, flowery, rhythmic",
+    "🌀 Surreal":        "absurd, dreamlike, fragmented, nonlinear"
 }
 
 IMAGE_MODELS = {
@@ -65,9 +73,9 @@ IMAGE_MODELS = {
 }
 
 MODELS = {
-    "🧠 MythoMax":      "gryphe/mythomax-l2-13b",
-    "🐬 Dolphin":       "cognitivecomputations/dolphin-mixtral",
-    "🤖 OpenChat":      "openchat/openchat-3.5-0106"
+    "🧠 MythoMax":   "gryphe/mythomax-l2-13b",
+    "🐬 Dolphin":    "cognitivecomputations/dolphin-mixtral",
+    "🤖 OpenChat":   "openchat/openchat-3.5-0106"
 }
 
 PRESETS = {"Vanilla": 0, "NSFW": 50, "Hardcore": 100}
@@ -303,22 +311,32 @@ def main_interface():
     """, unsafe_allow_html=True)
     st.title("📖 NarrativaX – AI‑Powered Story Studio")
 
-    # Model Selectors
-    m1, m2 = st.columns(2)
-    with m1:
-        st.selectbox("🤖 AI Model", list(MODELS.keys()), key="selected_model")
-    with m2:
-        st.selectbox("🖼️ Image Model", list(IMAGE_MODELS.keys()), key="selected_image_model")
+    # AI Model selection as horizontal radio buttons
+    st.subheader("🤖 AI Model")
+    st.session_state.selected_model = st.radio(
+        "", list(MODELS.keys()),
+        index=list(MODELS.keys()).index(st.session_state.selected_model)
+            if st.session_state.selected_model in MODELS else 0,
+        horizontal=True
+    )
+    # Image Model selection as horizontal radio buttons
+    st.subheader("🖼️ Image Model")
+    st.session_state.selected_image_model = st.radio(
+        "", list(IMAGE_MODELS.keys()),
+        index=list(IMAGE_MODELS.keys()).index(st.session_state.selected_image_model)
+            if st.session_state.selected_image_model in IMAGE_MODELS else 0,
+        horizontal=True
+    )
 
-    # Content Presets
+    # Content Presets as horizontal radio buttons
     st.subheader("🔞 Content Intensity")
-    pcols = st.columns(3)
-    for i, name in enumerate(PRESETS):
-        sel = (st.session_state.content_preset == name)
-        lbl = f"{name}{' ✅' if sel else ''}"
-        if pcols[i].button(lbl, key=f"preset_{i}"):
-            st.session_state.content_preset = name
-            st.session_state.explicit_level = PRESETS[name]
+    preset = st.radio(
+        "", list(PRESETS.keys()),
+        index=list(PRESETS.keys()).index(st.session_state.content_preset),
+        horizontal=True
+    )
+    st.session_state.content_preset = preset
+    st.session_state.explicit_level = PRESETS[preset]
 
     # Genre / Tone
     genre_selector()
@@ -329,7 +347,7 @@ def main_interface():
     with c1:
         chapters = st.slider("📑 Chapters", 3, 30, 10)
     with c2:
-        prompt = st.text_input("✨ Your Story Seed",
+        prompt = st.text_input("✨ Your Story Seed", 
                                placeholder="A dystopian romance between an AI and a human rebel...")
 
     if st.button("🚀 Generate Book", type="primary", use_container_width=True):
@@ -342,7 +360,7 @@ def main_interface():
                 "tone":      st.session_state.selected_tone,
                 "chapters":  chapters,
                 "model":     MODELS[st.session_state.selected_model],
-                "img_model": st.session_state.selected_image_model
+                "img_model": IMAGE_MODELS[st.session_state.selected_image_model]
             }
             generate_book_content()
 
@@ -366,7 +384,8 @@ def main_interface():
                     if st.session_state[edit_key]:
                         new_text = st.text_area("Edit text",
                                                 st.session_state.book[title],
-                                                height=300, key=f"ta_{title}")
+                                                height=300,
+                                                key=f"ta_{title}")
                         if st.button("💾 Save Edit", key=f"save_{title}"):
                             st.session_state.book[title] = new_text
                             st.session_state[edit_key] = False
