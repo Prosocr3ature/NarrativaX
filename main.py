@@ -28,42 +28,33 @@ SAFE_LOADING_MESSAGES = [
     "🔥 Igniting conflicts...", "💔 Developing relationships..."
 ]
 
+# Main genres → list of sub‐genres/tags
 GENRES = {
-    "📖 Literary":    ["thoughtful","reflective","contemporary","historical","experimental","bildungsroman","metafiction","magical realism"],
-    "💖 Romance":     ["sensual","emotional","historical","paranormal","romantic comedy","drama","chick lit","suspense"],
-    "🔞 Adult":       ["softcore","hardcore","fetish","erotic","LGBTQ+","BDSM","explicit"],
-    "🚀 Sci‑Fi":      ["space opera","cyberpunk","dystopian","time travel","military","first contact","post‑apocalyptic"],
-    "🪄 Fantasy":     ["epic","urban","dark","high","fairy tale","sword & sorcery","steampunk","mythical"],
-    "🔪 Thriller":    ["suspense","psychological","crime","espionage","mystery","legal","medical","noir"],
-    "🕵️ Mystery":    ["detective","whodunit","investigation","sleuth","locked‑room","cozy","forensic"],
-    "👻 Horror":      ["supernatural","creepy","gore","slasher","paranormal","haunted"],
-    "🏰 Historical":  ["period drama","alternate history","renaissance","victorian","world war","medieval","colonial"],
-    "💼 Business":    ["entrepreneurship","leadership","finance","management","marketing","startups","strategy"],
-    "🌱 Self‑Help":   ["motivational","mindfulness","productivity","wellness","habits","self‑improvement"],
-    "👶 Children's":  ["bedtime","young adult","picture book","coming‑of‑age","fairy tale","middle grade"]
+    "📖 Literary":    ["Thoughtful", "Reflective", "Historical Fiction", "Experimental", "Magical Realism"],
+    "💖 Romance":     ["Sensual", "Emotional", "Paranormal Romance", "Romantic Comedy", "Drama"],
+    "🔞 Adult":       ["Erotic", "Softcore", "Hardcore", "BDSM", "Fetish"],
+    "🚀 Sci‑Fi":      ["Space Opera", "Cyberpunk", "Dystopian", "Time Travel", "Military Sci‑Fi"],
+    "🪄 Fantasy":     ["Epic", "Urban Fantasy", "Dark Fantasy", "Fairy Tale", "Steampunk"],
+    "🔪 Thriller":    ["Suspense", "Psychological", "Crime", "Espionage", "Noir"],
+    "🕵️ Mystery":    ["Detective", "Whodunit", "Cozy Mystery", "Forensic", "Locked‑Room"],
+    "👻 Horror":      ["Supernatural", "Slasher", "Paranormal", "Gore", "Haunted House"],
+    "🏰 Historical":  ["Period Drama", "Alternate History", "Medieval", "Victorian", "World War"],
+    "💼 Business":    ["Entrepreneurship", "Leadership", "Finance", "Strategy", "Startups"],
+    "🌱 Self‑Help":   ["Motivational", "Mindfulness", "Productivity", "Wellness", "Habit Building"],
+    "👶 Children's":  ["Bedtime Story", "Young Adult", "Middle Grade", "Picture Book", "Coming‑of‑Age"]
 }
 
 TONES = {
-    "😊 Wholesome":      "uplifting, positive, family‑friendly, heartwarming",
-    "😈 Explicit":       "graphic, raw, adult‑oriented, unfiltered",
-    "🤔 Philosophical":  "contemplative, deep, existential, reflective",
-    "😄 Humorous":       "witty, lighthearted, comedic, satirical",
-    "😱 Dark":           "gritty, intense, disturbing, nihilistic",
-    "💡 Educational":    "informative, structured, factual, instructional",
-    "💔 Melancholic":    "sad, poignant, bittersweet, lonely",
-    "🔮 Mystical":       "mysterious, ethereal, dreamlike, otherworldly",
-    "🔥 Passionate":     "intense, fervent, emotional, ardent",
-    "🦄 Quirky":         "eccentric, whimsical, zany, offbeat",
-    "🎭 Dramatic":       "theatrical, heightened, operatic, emotional",
-    "🏹 Adventurous":     "action‑packed, daring, thrilling, exploratory",
-    "💭 Reflective":     "introspective, thoughtful, meditative, pensive",
-    "⚔ Heroic":          "courageous, noble, epic, valorous",
-    "🌟 Optimistic":     "hopeful, bright, uplifting, positive",
-    "🗡 Vengeful":       "revenge‑driven, ruthless, dark, relentless",
-    "🎉 Celebratory":    "joyful, festive, triumphant, elated",
-    "💪 Empowering":     "strong, assertive, motivational, determined",
-    "🌊 Poetic":         "lyrical, metaphorical, flowery, rhythmic",
-    "🌀 Surreal":        "absurd, dreamlike, fragmented, nonlinear"
+    "😊 Wholesome":      "Uplifting, positive, family‑friendly",
+    "😈 Explicit":       "Graphic, raw, adult‑oriented",
+    "🤔 Philosophical":  "Contemplative, existential, deep",
+    "😄 Humorous":       "Witty, lighthearted, satirical",
+    "😱 Dark":           "Gritty, intense, disturbing",
+    "💡 Educational":    "Informative, structured, factual",
+    "💔 Melancholic":    "Sad, poignant, bittersweet",
+    "🔮 Mystical":       "Ethereal, dreamlike, mysterious",
+    "🔥 Passionate":     "Fervent, intense, ardent",
+    "🦄 Quirky":         "Eccentric, whimsical, offbeat"
 }
 
 IMAGE_MODELS = {
@@ -72,9 +63,9 @@ IMAGE_MODELS = {
 }
 
 MODELS = {
-    "🧠 MythoMax":   "gryphe/mythomax-l2-13b",
-    "🐬 Dolphin":    "cognitivecomputations/dolphin-mixtral",
-    "🤖 OpenChat":   "openchat/openchat-3.5-0106"
+    "🧠 MythoMax": "gryphe/mythomax-l2-13b",
+    "🐬 Dolphin":  "cognitivecomputations/dolphin-mixtral",
+    "🤖 OpenChat": "openchat/openchat-3.5-0106"
 }
 
 PRESETS = {"Vanilla": 0, "NSFW": 50, "Hardcore": 100}
@@ -94,6 +85,7 @@ def initialize_state():
         "characters":           [],
         "gen_progress":         {},
         "selected_genre":       None,
+        "selected_subgenres":   [],
         "selected_tone":        None,
         "selected_model":       list(MODELS.keys())[0],
         "selected_image_model": list(IMAGE_MODELS.keys())[0],
@@ -145,22 +137,16 @@ def create_export_zip():
 # AI INTEGRATIONS
 # ====================
 def call_openrouter(prompt, model_key):
-    headers = {
-        "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
-        "Content-Type":  "application/json"
-    }
+    headers = {"Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}", "Content-Type": "application/json"}
     explicit = f"[Explicit Level: {st.session_state.explicit_level}/100] "
     payload = {
-        "model":       MODELS[model_key],
-        "messages":    [{"role":"user","content": explicit + prompt}],
-        "max_tokens":  MAX_TOKENS,
+        "model": MODELS[model_key],
+        "messages": [{"role": "user", "content": explicit + prompt}],
+        "max_tokens": MAX_TOKENS,
         "temperature": 0.7 + st.session_state.explicit_level * 0.002
     }
     try:
-        r = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers, json=payload, timeout=30
-        )
+        r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=30)
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"]
     except Exception as e:
@@ -174,9 +160,9 @@ def generate_image(prompt, model_key, section):
     add = f", explicit {st.session_state.explicit_level}/100" if st.session_state.explicit_level > 0 else ""
     try:
         out = replicate.run(version, input={
-            "prompt":          prompt + add,
-            "width":           IMAGE_SIZE[0],
-            "height":          IMAGE_SIZE[1],
+            "prompt": prompt + add,
+            "width": IMAGE_SIZE[0],
+            "height": IMAGE_SIZE[1],
             "negative_prompt": neg
         })
         url = out[0] if isinstance(out, list) else out
@@ -196,15 +182,16 @@ def generate_book_content():
             st.write(random.choice(SAFE_LOADING_MESSAGES))
             gp = st.session_state.gen_progress
 
-            # Outline
+            # 1) Outline
             outline_prompt = (
                 f"Create a {gp['chapters']}-chapter outline for a "
-                f"{gp['genre']} story with {gp['tone']} tone. Seed: {gp['prompt']}"
+                f"{gp['genre']} story ({', '.join(gp['subgenres'])}) with "
+                f"{gp['tone']} tone. Seed: {gp['prompt']}"
             )
             outline = call_openrouter(outline_prompt, gp["model"])
             st.session_state.outline = outline
 
-            # Chapters
+            # 2) Chapters
             lines = [l.strip() for l in outline.split("\n") if l.strip()][2:]
             for chap in lines:
                 st.write(f"📝 Writing {chap}...")
@@ -212,10 +199,10 @@ def generate_book_content():
                 st.session_state.book[chap] = content
                 st.session_state.chapter_order.append(chap)
 
-            # Cover
+            # 3) Cover
             st.write("🎨 Painting the cover...")
             cover = generate_image(
-                f"Book cover for {gp['prompt']}, {gp['genre']}, {gp['tone']} style",
+                f"Book cover for {gp['prompt']}, {gp['genre']} ({', '.join(gp['subgenres'])}), {gp['tone']} style",
                 gp["img_model"], "cover"
             )
             st.session_state.cover = cover
@@ -227,31 +214,6 @@ def generate_book_content():
 
 
 # ====================
-# UI COMPONENTS
-# ====================
-def genre_selector():
-    st.subheader("🎭 Choose Your Genre")
-    cols = st.columns(4)
-    for i, (g, tags) in enumerate(GENRES.items()):
-        sel = (st.session_state.selected_genre == g)
-        label = f"{g}{' ✅' if sel else ''}"
-        if cols[i % 4].button(label, key=f"genre_{i}", help=", ".join(tags)):
-            st.session_state.selected_genre = g
-            st.session_state.gen_progress["genre"] = g
-
-
-def tone_selector():
-    st.subheader("🎨 Select Narrative Tone")
-    cols = st.columns(3)
-    for i, (t, desc) in enumerate(TONES.items()):
-        sel = (st.session_state.selected_tone == t)
-        label = f"{t}{' ✅' if sel else ''}"
-        if cols[i % 3].button(label, key=f"tone_{i}", help=desc):
-            st.session_state.selected_tone = t
-            st.session_state.gen_progress["tone"] = t
-
-
-# ====================
 # MAIN APP
 # ====================
 def main_interface():
@@ -259,15 +221,20 @@ def main_interface():
     initialize_state()
     validate_environment()
 
-    # CSS overrides for readability
+    # ----------------------------------------
+    # GLOBAL CSS for spacing, logo, readability
     st.markdown("""
       <style>
-        textarea { background-color: #f9f9f9 !important; color: #000 !important; }
-        .stExpanderHeader { color: #000 !important; }
+        .logo-container { text-align:center; margin:8px 0; }
+        .stButton>button { margin:4px 2px !important; }
+        .stSubheader, .stHeader { margin-bottom:4px !important; }
+        textarea, .stTextArea textarea { background:#fafafa !important; color:#000 !important; }
+        .block-container { padding-top:1rem !important; padding-bottom:1rem !important; }
       </style>
     """, unsafe_allow_html=True)
 
-    # Sidebar controls
+    # ----------------------------------------
+    # SESSION CONTROLS (sidebar)
     with st.sidebar:
         st.markdown("### 🔧 Session Controls")
         if st.session_state.last_saved:
@@ -296,17 +263,20 @@ def main_interface():
                 for k in ("book","chapter_order","outline","cover","image_cache","characters","gen_progress"):
                     st.session_state[k] = {} if isinstance(st.session_state[k], dict) else []
                 st.session_state.selected_genre = None
+                st.session_state.selected_subgenres = []
                 st.session_state.selected_tone = None
                 st.session_state.last_saved = None
                 st.experimental_rerun()
 
-    # Centered logo
-    cols = st.columns([1,2,1])
-    with cols[1]:
-        st.image("logo.png", width=240)
+    # ----------------------------------------
+    # CENTERED LOGO
+    st.markdown('<div class="logo-container">'
+                '<img src="logo.png" width="240" style="border-radius:12px;" />'
+                '</div>', unsafe_allow_html=True)
+
     st.title("📖 NarrativaX – AI‑Powered Story Studio")
 
-    # Model selections
+    # AI & Image Model selection as radios
     st.subheader("🤖 AI Model")
     st.session_state.selected_model = st.radio(
         "", list(MODELS.keys()),
@@ -319,6 +289,8 @@ def main_interface():
         index=list(IMAGE_MODELS.keys()).index(st.session_state.selected_image_model),
         horizontal=True
     )
+
+    # Content intensity preset
     st.subheader("🔞 Content Intensity")
     preset = st.radio(
         "", list(PRESETS.keys()),
@@ -328,24 +300,40 @@ def main_interface():
     st.session_state.content_preset = preset
     st.session_state.explicit_level = PRESETS[preset]
 
-    # Genre & Tone
-    genre_selector()
-    tone_selector()
+    # Genre + subgenre dropdowns
+    st.subheader("🎭 Select Genre & Subgenres")
+    genre = st.selectbox("Main Genre", ["-- choose --"] + list(GENRES.keys()), index=0)
+    if genre in GENRES:
+        st.session_state.selected_genre = genre
+        sub = st.multiselect(
+            "Pick one or more sub‑genres",
+            options=GENRES[genre],
+            default=st.session_state.selected_subgenres or None
+        )
+        st.session_state.selected_subgenres = sub
 
-    # Chapters & seed
-    c1, c2 = st.columns([1,2])
+    # Tone
+    st.subheader("🎨 Select Narrative Tone")
+    tone = st.selectbox("Tone", ["-- choose --"] + list(TONES.keys()), index=0)
+    if tone in TONES:
+        st.session_state.selected_tone = tone
+
+    # Chapters & prompt
+    st.subheader("📑 Chapters & Story Seed")
+    c1, c2 = st.columns([1, 3])
     with c1:
-        chapters = st.slider("📑 Chapters", 3, 30, 10)
+        chapters = st.slider("", min_value=3, max_value=30, value=10)
     with c2:
-        prompt = st.text_input("✨ Your Story Seed", placeholder="A dystopian romance between an AI and a human rebel...")
+        prompt = st.text_input("", placeholder="A dystopian romance between an AI and a human rebel...")
 
-    if st.button("🚀 Generate Book", type="primary", use_container_width=True):
+    if st.button("🚀 Generate Book", use_container_width=True, type="primary"):
         if not st.session_state.selected_genre or not st.session_state.selected_tone:
-            st.warning("Select both a genre and tone first.")
+            st.warning("Please select both a genre and tone.")
         else:
             st.session_state.gen_progress = {
                 "prompt":    prompt,
                 "genre":     st.session_state.selected_genre,
+                "subgenres": st.session_state.selected_subgenres,
                 "tone":      st.session_state.selected_tone,
                 "chapters":  chapters,
                 "model":     st.session_state.selected_model,
@@ -353,11 +341,11 @@ def main_interface():
             }
             generate_book_content()
 
-    # Tabs
+    # If content exists, show tabs
     if st.session_state.chapter_order:
         tabs = st.tabs(["📖 Chapters","🎙️ Narration","🖼️ Artwork","📤 Export","👥 Characters"])
 
-        # Chapters
+        # Chapters tab
         with tabs[0]:
             st.subheader("Chapter Management")
             new_order = sort_items(st.session_state.chapter_order)
@@ -371,15 +359,15 @@ def main_interface():
 
                 with st.expander(title):
                     if st.session_state[edit_key]:
-                        new_text = st.text_area("", st.session_state.book[title], height=300, key=f"ta_{title}")
+                        txt = st.text_area("", st.session_state.book[title], height=300, key=f"ta_{title}")
                         if st.button("💾 Save Edit", key=f"save_{title}"):
-                            st.session_state.book[title] = new_text
+                            st.session_state.book[title] = txt
                             st.session_state[edit_key] = False
-                            st.success("Saved changes.")
+                            st.success("Saved.")
                     else:
-                        # render with white background + black text for readability
                         html = st.session_state.book[title].replace("\n", "<br>")
-                        st.markdown(f"<div style='background:#fff; color:#000; padding:15px; border-radius:5px;'>{html}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='background:#fff;color:#000;padding:12px;border-radius:5px;'>{html}</div>",
+                                    unsafe_allow_html=True)
 
                     a1, a2, a3 = st.columns(3)
                     with a1:
@@ -396,7 +384,7 @@ def main_interface():
                             st.success(f"Deleted {title}")
                             st.experimental_rerun()
 
-        # Narration
+        # Narration tab
         with tabs[1]:
             st.subheader("Audio Narration")
             for title in st.session_state.chapter_order:
@@ -408,9 +396,9 @@ def main_interface():
                             tts.save(fp.name)
                             st.audio(fp.name)
                     except gTTSError:
-                        st.error("⛔ TTS failed for this chapter.")
+                        st.error("Audio generation failed.")
 
-        # Artwork
+        # Artwork tab
         with tabs[2]:
             st.subheader("Generated Artwork")
             if st.session_state.cover:
@@ -420,21 +408,22 @@ def main_interface():
                 with cols[i % 3]:
                     st.image(img, caption=sec.title(), use_column_width=True)
 
-        # Export
+        # Export tab
         with tabs[3]:
             st.subheader("Export Options")
-            if st.button("📦 Export ZIP", use_container_width=True):
+            if st.button("📦 Download ZIP", use_container_width=True):
                 buf = create_export_zip()
-                st.download_button("⬇️ Download ZIP", data=buf.getvalue(),
+                st.download_button("⬇️ Download", data=buf.getvalue(),
                                    file_name="narrativax_book.zip", mime="application/zip")
 
-        # Characters
+        # Characters tab
         with tabs[4]:
             st.subheader("Character Development")
             if st.button("➕ Generate Characters", use_container_width=True):
                 chars = call_openrouter(f"Generate 3 characters for {st.session_state.gen_progress['prompt']}", st.session_state.selected_model)
-                new_chars = [c for c in chars.split("\n\n") if c.strip()]
-                st.session_state.characters.extend(new_chars)
+                for c in chars.split("\n\n"):
+                    if c.strip():
+                        st.session_state.characters.append(c.strip())
             for idx, char in enumerate(st.session_state.characters):
                 with st.expander(f"🧑 Character #{idx+1}"):
                     cc1, cc2 = st.columns([3,1])
