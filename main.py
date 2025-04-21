@@ -136,8 +136,10 @@ def create_export_zip():
 # AI & IMAGE CALLS
 # ====================
 def call_openrouter(prompt, model_key):
-    headers = {"Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
-               "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
+        "Content-Type": "application/json"
+    }
     explicit = f"[Explicit Level: {st.session_state.explicit_level}/100] "
     payload = {
         "model":       MODELS[model_key],
@@ -146,8 +148,10 @@ def call_openrouter(prompt, model_key):
         "temperature": 0.7 + st.session_state.explicit_level * 0.002
     }
     try:
-        r = requests.post("https://openrouter.ai/api/v1/chat/completions",
-                          headers=headers, json=payload, timeout=30)
+        r = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers, json=payload, timeout=30
+        )
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"]
     except Exception as e:
@@ -222,7 +226,7 @@ def main_interface():
     initialize_state()
     validate_environment()
 
-    # -- global CSS tweaks
+    # -- CSS tweaks
     st.markdown("""
     <style>
       .logo-container { text-align:center; margin:4px 0; }
@@ -233,7 +237,7 @@ def main_interface():
     </style>
     """, unsafe_allow_html=True)
 
-    # -- sidebar session controls
+    # -- Sidebar: Save / Load / New
     with st.sidebar:
         st.markdown("### 🔧 Session")
         if st.session_state.last_saved:
@@ -267,16 +271,17 @@ def main_interface():
                 st.session_state.last_saved = None
                 st.experimental_rerun()
 
-    # -- centered logo via PIL + st.image
+    # -- Centered logo
     logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
     cols = st.columns([1, 2, 1])
     with cols[1]:
         if os.path.exists(logo_path):
             logo_img = Image.open(logo_path)
-            st.image(logo_img, width=240, use_column_width=False)
+            st.image(logo_img, width=240, use_container_width=True)
+
     st.title("📖 NarrativaX – AI‑Powered Story Studio")
 
-    # -- AI & image model radios
+    # -- Model selectors
     st.subheader("🤖 AI Model")
     st.session_state.selected_model = st.radio(
         "", list(MODELS.keys()),
@@ -290,7 +295,7 @@ def main_interface():
         horizontal=True
     )
 
-    # -- content preset
+    # -- Content intensity
     st.subheader("🔞 Content Intensity")
     preset = st.radio(
         "", list(PRESETS.keys()),
@@ -300,7 +305,7 @@ def main_interface():
     st.session_state.content_preset = preset
     st.session_state.explicit_level = PRESETS[preset]
 
-    # -- genre + subgenres dropdown
+    # -- Genre & subgenres
     st.subheader("🎭 Genre & Sub‑Genres")
     g = st.selectbox("Main Genre", ["-- choose --"] + list(GENRES.keys()))
     if g in GENRES:
@@ -308,13 +313,13 @@ def main_interface():
         subs = st.multiselect("Pick sub‑genres", GENRES[g], default=st.session_state.selected_subgenres)
         st.session_state.selected_subgenres = subs
 
-    # -- tone dropdown
+    # -- Tone
     st.subheader("🎨 Tone")
     t = st.selectbox("Narrative Tone", ["-- choose --"] + list(TONES.keys()))
     if t in TONES:
         st.session_state.selected_tone = t
 
-    # -- chapters & prompt
+    # -- Chapters & prompt
     st.subheader("📑 Chapters & Seed")
     c1, c2 = st.columns([1, 3])
     with c1:
@@ -337,11 +342,11 @@ def main_interface():
             }
             generate_book_content()
 
-    # -- content tabs
+    # -- Tabs for content
     if st.session_state.chapter_order:
         tabs = st.tabs(["📖 Chapters","🎙️ Narration","🖼️ Artwork","📤 Export","👥 Characters"])
 
-        # Chapters
+        # Chapters tab
         with tabs[0]:
             st.subheader("Chapter Manager")
             new_order = sort_items(st.session_state.chapter_order)
@@ -352,7 +357,6 @@ def main_interface():
                 ek = f"edit_{title}"
                 if ek not in st.session_state:
                     st.session_state[ek] = False
-
                 with st.expander(title):
                     if st.session_state[ek]:
                         txt = st.text_area("", st.session_state.book[title], height=300, key=f"ta_{title}")
@@ -362,12 +366,17 @@ def main_interface():
                             st.success("Saved.")
                     else:
                         html = st.session_state.book[title].replace("\n","<br>")
-                        st.markdown(f"<div style='background:#fff;color:#000;padding:12px;border-radius:5px;'>{html}</div>", unsafe_allow_html=True)
-
+                        st.markdown(
+                            f"<div style='background:#fff;color:#000;padding:12px;border-radius:5px;'>{html}</div>",
+                            unsafe_allow_html=True
+                        )
                     a1,a2,a3 = st.columns(3)
                     with a1:
                         if st.button("➡️ Continue", key=f"cont_{title}"):
-                            more = call_openrouter(f"Continue this chapter: {st.session_state.book[title]}", st.session_state.selected_model)
+                            more = call_openrouter(
+                                f"Continue this chapter: {st.session_state.book[title]}",
+                                st.session_state.selected_model
+                            )
                             st.session_state.book[title] += "\n\n" + more
                     with a2:
                         if st.button("✏️ Edit", key=f"editbtn_{title}"):
@@ -379,7 +388,7 @@ def main_interface():
                             st.success(f"Deleted {title}")
                             st.experimental_rerun()
 
-        # Narration
+        # Narration tab
         with tabs[1]:
             st.subheader("Audio Narration")
             for title in st.session_state.chapter_order:
@@ -391,19 +400,19 @@ def main_interface():
                             tts.save(fp.name)
                             st.audio(fp.name)
                     except gTTSError:
-                        st.error("TTS failed for this chapter.")
+                        st.error("TTS failed.")
 
-        # Artwork
+        # Artwork tab
         with tabs[2]:
             st.subheader("Generated Artwork")
             if st.session_state.cover:
-                st.image(st.session_state.cover, caption="Cover", use_column_width=True)
+                st.image(st.session_state.cover, caption="Cover", use_container_width=True)
             cols = st.columns(3)
             for i,(sec,img) in enumerate(st.session_state.image_cache.items()):
                 with cols[i%3]:
-                    st.image(img, caption=sec.title(), use_column_width=True)
+                    st.image(img, caption=sec.title(), use_container_width=True)
 
-        # Export
+        # Export tab
         with tabs[3]:
             st.subheader("Export")
             if st.button("📦 Download ZIP", use_container_width=True):
@@ -411,11 +420,14 @@ def main_interface():
                 st.download_button("⬇️ Download", buf.getvalue(),
                                    file_name="narrativax_book.zip", mime="application/zip")
 
-        # Characters
+        # Characters tab
         with tabs[4]:
             st.subheader("Character Dev")
             if st.button("➕ Generate Characters", use_container_width=True):
-                chars = call_openrouter(f"Generate 3 characters for {st.session_state.gen_progress['prompt']}", st.session_state.selected_model)
+                chars = call_openrouter(
+                    f"Generate 3 characters for {st.session_state.gen_progress['prompt']}",
+                    st.session_state.selected_model
+                )
                 for c in chars.split("\n\n"):
                     if c.strip():
                         st.session_state.characters.append(c.strip())
