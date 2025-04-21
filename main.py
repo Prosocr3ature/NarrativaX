@@ -29,18 +29,18 @@ SAFE_LOADING_MESSAGES = [
 ]
 
 GENRES = {
-    "📖 Literary":    ["thoughtful", "reflective", "contemporary", "historical fiction", "experimental", "bildungsroman", "metafiction", "magical realism"],
-    "💖 Romance":     ["sensual", "emotional", "historical romance", "paranormal romance", "romantic comedy", "relationship drama", "chick lit", "romantic suspense"],
-    "🔞 Adult":       ["explicit", "erotic", "softcore", "hardcore", "fetish", "sensual erotica", "LGBTQ+", "BDSM"],
-    "🚀 Sci‑Fi":      ["futuristic", "space opera", "cyberpunk", "dystopian", "time travel", "military sci‑fi", "first contact", "post‑apocalyptic"],
-    "🪄 Fantasy":     ["epic", "urban fantasy", "dark fantasy", "high fantasy", "fairy tale", "sword & sorcery", "steampunk", "mythical"],
-    "🔪 Thriller":    ["suspenseful", "psychological thriller", "crime", "espionage", "mystery", "legal thriller", "medical thriller", "noir"],
-    "🕵️ Mystery":    ["detective", "whodunit", "investigation", "sleuth", "locked‑room", "cozy mystery", "forensic"],
-    "👻 Horror":      ["supernatural", "psychological horror", "creepy", "gore", "slasher", "paranormal", "haunted house"],
-    "🏰 Historical":  ["period drama", "alternate history", "Renaissance", "Victorian", "World War", "medieval", "colonial"],
-    "💼 Business":    ["entrepreneurship", "leadership", "finance", "management", "marketing", "startups", "strategy"],
-    "🌱 Self‑Help":   ["motivational", "mindfulness", "productivity", "wellness", "habit building", "self‑improvement"],
-    "👶 Children's":  ["bedtime story", "young adult", "picture book", "coming‑of‑age", "fairy tale", "middle grade"]
+    "📖 Literary":    ["thoughtful","reflective","contemporary","historical fiction","experimental","bildungsroman","metafiction","magical realism"],
+    "💖 Romance":     ["sensual","emotional","historical romance","paranormal romance","romantic comedy","relationship drama","chick lit","romantic suspense"],
+    "🔞 Adult":       ["explicit","erotic","softcore","hardcore","fetish","sensual erotica","LGBTQ+","BDSM"],
+    "🚀 Sci‑Fi":      ["futuristic","space opera","cyberpunk","dystopian","time travel","military sci‑fi","first contact","post‑apocalyptic"],
+    "🪄 Fantasy":     ["epic","urban fantasy","dark fantasy","high fantasy","fairy tale","sword & sorcery","steampunk","mythical"],
+    "🔪 Thriller":    ["suspenseful","psychological thriller","crime","espionage","mystery","legal thriller","medical thriller","noir"],
+    "🕵️ Mystery":    ["detective","whodunit","investigation","sleuth","locked‑room","cozy mystery","forensic"],
+    "👻 Horror":      ["supernatural","psychological horror","creepy","gore","slasher","paranormal","haunted house"],
+    "🏰 Historical":  ["period drama","alternate history","Renaissance","Victorian","World War","medieval","colonial"],
+    "💼 Business":    ["entrepreneurship","leadership","finance","management","marketing","startups","strategy"],
+    "🌱 Self‑Help":   ["motivational","mindfulness","productivity","wellness","habit building","self‑improvement"],
+    "👶 Children's":  ["bedtime story","young adult","picture book","coming‑of‑age","fairy tale","middle grade"]
 }
 
 TONES = {
@@ -86,18 +86,20 @@ PRESETS = {"Vanilla": 0, "NSFW": 50, "Hardcore": 100}
 # ====================
 def initialize_state():
     defaults = {
-        "last_saved":      None,
-        "book":            {},
-        "chapter_order":   [],
-        "outline":         "",
-        "cover":           None,
-        "image_cache":     {},
-        "characters":      [],
-        "gen_progress":    {},
-        "selected_genre":  None,
-        "selected_tone":   None,
-        "content_preset":  "Vanilla",
-        "explicit_level":  PRESETS["Vanilla"],
+        "last_saved":         None,
+        "book":               {},
+        "chapter_order":      [],
+        "outline":            "",
+        "cover":              None,
+        "image_cache":        {},
+        "characters":         [],
+        "gen_progress":       {},
+        "selected_genre":     None,
+        "selected_tone":      None,
+        "selected_model":     list(MODELS.keys())[0],
+        "selected_image_model": list(IMAGE_MODELS.keys())[0],
+        "content_preset":     "Vanilla",
+        "explicit_level":     PRESETS["Vanilla"],
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -143,14 +145,14 @@ def create_export_zip():
 # ====================
 # AI INTEGRATIONS
 # ====================
-def call_openrouter(prompt, model):
+def call_openrouter(prompt, model_key):
     headers = {
         "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
         "Content-Type":  "application/json"
     }
     explicit = f"[Explicit Level: {st.session_state.explicit_level}/100] "
     payload = {
-        "model":       model,
+        "model":       MODELS[model_key],
         "messages":    [{"role":"user","content": explicit + prompt}],
         "max_tokens":  MAX_TOKENS,
         "temperature": 0.7 + st.session_state.explicit_level * 0.002
@@ -158,7 +160,9 @@ def call_openrouter(prompt, model):
     try:
         r = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers, json=payload, timeout=30
+            headers=headers,
+            json=payload,
+            timeout=30
         )
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"]
@@ -167,9 +171,9 @@ def call_openrouter(prompt, model):
         return ""
 
 
-def generate_image(prompt, model_name, section):
-    version = IMAGE_MODELS[model_name]
-    neg = "text, watermark" if "NSFW" in model_name else ""
+def generate_image(prompt, model_key, section):
+    version = IMAGE_MODELS[model_key]
+    neg = "text, watermark" if "NSFW" in model_key else ""
     add = f", explicit {st.session_state.explicit_level}/100" if st.session_state.explicit_level > 0 else ""
     try:
         out = replicate.run(version, input={
@@ -215,7 +219,8 @@ def generate_book_content():
             st.write("🎨 Painting the cover...")
             cover = generate_image(
                 f"Book cover for {gp['prompt']}, {gp['genre']}, {gp['tone']} style",
-                gp["img_model"], "cover"
+                gp["img_model"],
+                "cover"
             )
             st.session_state.cover = cover
 
@@ -262,15 +267,13 @@ def main_interface():
     st.markdown("""
     <style>
       .css-1d391kg, .css-1v3fvcr { background-color: #fff !important; }
-      .stTextArea textarea, .stExpanderHeader, .stButton>button {
-        color: #000 !important;
-      }
+      .stTextArea textarea, .stExpanderHeader, .stButton>button { color: #000 !important; }
       .stTextArea textarea { background: #f7f7f7 !important; }
       .css-yk16xz { border: none !important; }
     </style>
     """, unsafe_allow_html=True)
 
-    # Sidebar: Save / Load / New
+    # Sidebar controls
     with st.sidebar:
         st.markdown("### 🔧 Session Controls")
         if st.session_state.last_saved:
@@ -303,7 +306,7 @@ def main_interface():
                 st.session_state.last_saved = None
                 st.experimental_rerun()
 
-    # Centered Logo
+    # Centered logo
     st.markdown("""
       <div style="display:flex; justify-content:center; margin:20px 0;">
         <img src="logo.png" width="240px" style="border-radius:10px;"/>
@@ -311,24 +314,23 @@ def main_interface():
     """, unsafe_allow_html=True)
     st.title("📖 NarrativaX – AI‑Powered Story Studio")
 
-    # AI Model selection as horizontal radio buttons
+    # AI Model radio
     st.subheader("🤖 AI Model")
     st.session_state.selected_model = st.radio(
         "", list(MODELS.keys()),
-        index=list(MODELS.keys()).index(st.session_state.selected_model)
-            if st.session_state.selected_model in MODELS else 0,
-        horizontal=True
-    )
-    # Image Model selection as horizontal radio buttons
-    st.subheader("🖼️ Image Model")
-    st.session_state.selected_image_model = st.radio(
-        "", list(IMAGE_MODELS.keys()),
-        index=list(IMAGE_MODELS.keys()).index(st.session_state.selected_image_model)
-            if st.session_state.selected_image_model in IMAGE_MODELS else 0,
+        index=list(MODELS.keys()).index(st.session_state.selected_model),
         horizontal=True
     )
 
-    # Content Presets as horizontal radio buttons
+    # Image Model radio
+    st.subheader("🖼️ Image Model")
+    st.session_state.selected_image_model = st.radio(
+        "", list(IMAGE_MODELS.keys()),
+        index=list(IMAGE_MODELS.keys()).index(st.session_state.selected_image_model),
+        horizontal=True
+    )
+
+    # Content intensity radio
     st.subheader("🔞 Content Intensity")
     preset = st.radio(
         "", list(PRESETS.keys()),
@@ -338,17 +340,16 @@ def main_interface():
     st.session_state.content_preset = preset
     st.session_state.explicit_level = PRESETS[preset]
 
-    # Genre / Tone
+    # Genre & Tone
     genre_selector()
     tone_selector()
 
-    # Chapters & Seed
+    # Chapters & seed
     c1, c2 = st.columns([1,2])
     with c1:
         chapters = st.slider("📑 Chapters", 3, 30, 10)
     with c2:
-        prompt = st.text_input("✨ Your Story Seed", 
-                               placeholder="A dystopian romance between an AI and a human rebel...")
+        prompt = st.text_input("✨ Your Story Seed", placeholder="A dystopian romance between an AI and a human rebel...")
 
     if st.button("🚀 Generate Book", type="primary", use_container_width=True):
         if not st.session_state.selected_genre or not st.session_state.selected_tone:
@@ -359,16 +360,16 @@ def main_interface():
                 "genre":     st.session_state.selected_genre,
                 "tone":      st.session_state.selected_tone,
                 "chapters":  chapters,
-                "model":     MODELS[st.session_state.selected_model],
-                "img_model": IMAGE_MODELS[st.session_state.selected_image_model]
+                "model":     st.session_state.selected_model,
+                "img_model": st.session_state.selected_image_model
             }
             generate_book_content()
 
-    # Content Tabs
+    # Tabs
     if st.session_state.chapter_order:
         tabs = st.tabs(["📖 Chapters","🎙️ Narration","🖼️ Artwork","📤 Export","👥 Characters"])
 
-        # Chapters
+        # Chapters tab
         with tabs[0]:
             st.subheader("Chapter Management")
             new_order = sort_items(st.session_state.chapter_order)
@@ -382,25 +383,18 @@ def main_interface():
 
                 with st.expander(title):
                     if st.session_state[edit_key]:
-                        new_text = st.text_area("Edit text",
-                                                st.session_state.book[title],
-                                                height=300,
-                                                key=f"ta_{title}")
+                        new_text = st.text_area("Edit text", st.session_state.book[title], height=300, key=f"ta_{title}")
                         if st.button("💾 Save Edit", key=f"save_{title}"):
                             st.session_state.book[title] = new_text
                             st.session_state[edit_key] = False
                             st.success("Saved changes.")
                     else:
-                        st.text_area("", st.session_state.book[title],
-                                     height=300, disabled=True)
+                        st.text_area("", st.session_state.book[title], height=300, disabled=True)
 
                     a1, a2, a3 = st.columns(3)
                     with a1:
                         if st.button("➡️ Continue", key=f"cont_{title}"):
-                            more = call_openrouter(
-                                f"Continue this chapter: {st.session_state.book[title]}",
-                                st.session_state.gen_progress["model"]
-                            )
+                            more = call_openrouter(f"Continue this chapter: {st.session_state.book[title]}", st.session_state.selected_model)
                             st.session_state.book[title] += "\n\n" + more
                     with a2:
                         if st.button("✏️ Edit", key=f"editbtn_{title}"):
@@ -412,7 +406,7 @@ def main_interface():
                             st.success(f"Deleted {title}")
                             st.experimental_rerun()
 
-        # Narration
+        # Narration tab
         with tabs[1]:
             st.subheader("Audio Narration")
             for title in st.session_state.chapter_order:
@@ -426,7 +420,7 @@ def main_interface():
                     except gTTSError:
                         st.error("⛔ TTS failed for this chapter.")
 
-        # Artwork
+        # Artwork tab
         with tabs[2]:
             st.subheader("Generated Artwork")
             if st.session_state.cover:
@@ -436,22 +430,19 @@ def main_interface():
                 with cols[i % 3]:
                     st.image(img, caption=sec.title(), use_column_width=True)
 
-        # Export
+        # Export tab
         with tabs[3]:
             st.subheader("Export Options")
             if st.button("📦 Export ZIP", use_container_width=True):
                 buf = create_export_zip()
-                st.download_button("⬇️ Download", data=buf.getvalue(),
-                                   file_name="narrativax_book.zip", mime="application/zip")
+                st.download_button("⬇️ Download", data=buf.getvalue(), file_name="narrativax_book.zip", mime="application/zip")
 
-        # Characters
+        # Characters tab
         with tabs[4]:
             st.subheader("Character Development")
             if st.button("➕ Generate Characters", use_container_width=True):
-                new_chars = call_openrouter(
-                    f"Generate 3 characters for {st.session_state.gen_progress['prompt']}",
-                    st.session_state.gen_progress["model"]
-                ).split("\n\n")
+                chars = call_openrouter(f"Generate 3 characters for {st.session_state.gen_progress['prompt']}", st.session_state.selected_model)
+                new_chars = [c for c in chars.split("\n\n") if c.strip()]
                 st.session_state.characters.extend(new_chars)
             for idx, char in enumerate(st.session_state.characters):
                 with st.expander(f"🧑 Character #{idx+1}"):
