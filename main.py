@@ -190,7 +190,7 @@ def generate_image(prompt, model_name, section):
                 "width": IMAGE_SIZE[0],
                 "height": IMAGE_SIZE[1],
                 "negative_prompt": "text, watermark" if "NSFW" in model_name else "",
-                "guidance_scale": 7.5 + (st.session_state.explicit_level * 0.1)
+                # Removed guidance_scale parameter entirely
             }
         )
         
