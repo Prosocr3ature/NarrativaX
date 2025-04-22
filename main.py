@@ -1,146 +1,187 @@
 import os
+import base64
+import json
 import requests
 import replicate
 import streamlit as st
+
 from io import BytesIO
 from PIL import Image
-from tempfile import NamedTemporaryFile
 
 # ====================
 # CONFIG & CONSTANTS
 # ====================
-IMAGE_MODEL = "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29"
-OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions"
-MAX_TOKENS = 1024
+MODELS = {
+    "🧠 MythoMax": "gryphe/mythomax-l2-13b",
+    "🐬 Dolphin":  "cognitivecomputations/dolphin-mixtral",
+    "🤖 OpenChat": "openchat/openchat-3.5-0106",
+}
+
+IMAGE_MODELS = {
+    "🎨 Realistic Vision": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
+    "🔥 Reliberate NSFW":  "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
+    # Added hardcore merge model per your request:
+    "🔞 XL Porn Merge":   "John6666/uber-realistic-porn-merge-xl-urpmxl-v3-sdxl",
+}
+
+MAX_TOKENS = 1800
+IMAGE_SIZE = (768, 1024)
 
 # ====================
-# SESSION STATE INIT
+# HELPERS
 # ====================
-def init_state():
-    if "persona" not in st.session_state:
-        st.session_state.persona = None          # dict with name & bio
-    if "persona_image" not in st.session_state:
-        st.session_state.persona_image = None    # PIL.Image
-    if "chat_history" not in st.session_state:
-        # list of (role, message) tuples
-        st.session_state.chat_history = []
-
-# ====================
-# API CALLS
-# ====================
-def call_openrouter(messages):
-    """messages: list of {"role":..., "content":...}"""
+def call_openrouter(prompt: str, model_key: str) -> str:
     headers = {
         "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
-        "Content-Type":  "application/json"
+        "Content-Type": "application/json"
     }
     payload = {
-        "model":       st.session_state.persona.get("model", "gryphe/mythomax-l2-13b"),
-        "messages":    messages,
+        "model":       MODELS[model_key],
+        "messages":    [{"role": "user", "content": prompt}],
         "max_tokens":  MAX_TOKENS,
         "temperature": 0.8
     }
-    r = requests.post(OPENROUTER_API, headers=headers, json=payload, timeout=30)
+    r = requests.post("https://openrouter.ai/api/v1/chat/completions",
+                      headers=headers, json=payload, timeout=30)
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"]
+    return r.json()["choices"][0]["message"]["content"].strip()
 
-def generate_image(prompt):
-    """Generate persona image via Replicate Reliberate NSFW."""
-    out = replicate.run(
-        IMAGE_MODEL,
-        input={
-            "prompt": prompt,
-            "width": 512,
-            "height": 512,
-        }
-    )
+def generate_image(prompt: str, model_key: str):
+    version = IMAGE_MODELS[model_key]
+    out = replicate.run(version, input={
+        "prompt": prompt,
+        "width":  IMAGE_SIZE[0],
+        "height": IMAGE_SIZE[1],
+    })
     url = out[0] if isinstance(out, list) else out
     resp = requests.get(url, timeout=15)
     resp.raise_for_status()
     return Image.open(BytesIO(resp.content))
 
+def img_to_base64(img: Image.Image) -> str:
+    buf = BytesIO()
+    img.save(buf, format="JPEG")
+    return base64.b64encode(buf.getvalue()).decode()
+
 # ====================
-# UI
+# STATE INIT
 # ====================
-def create_persona():
-    st.header("👩 Create Your Virtual GF")
-    name = st.text_input("Name her:", value="")
-    bio  = st.text_area("Give her a little bio/traits:", height=100)
-    model = st.selectbox(
-        "Chat model",
-        ["🧠 MythoMax","🐬 Dolphin","🤖 OpenChat"],
-        index=0
-    )
-    if st.button("🎨 Generate Persona"):
-        if not name.strip() or not bio.strip():
-            st.warning("Please provide both a name and bio.")
-            return
-        with st.spinner("Generating her portrait…"):
-            try:
-                img = generate_image(f"photorealistic portrait of a {bio}")
-                st.session_state.persona = {
-                    "name": name.strip(),
-                    "bio":  bio.strip(),
-                    "model": {
-                        "🧠 MythoMax": "gryphe/mythomax-l2-13b",
-                        "🐬 Dolphin":  "cognitivecomputations/dolphin-mixtral",
-                        "🤖 OpenChat":"openchat/openchat-3.5-0106"
-                    }[model]
-                }
-                st.session_state.persona_image = img
-                st.session_state.chat_history = []
-                st.success(f"{name} is ready!")
-            except Exception as e:
-                st.error(f"Image generation failed: {e}")
+def init():
+    if "persona_name" not in st.session_state:
+        st.session_state.update({
+            "persona_name":      "",
+            "persona_bio":       "",
+            "persona_model":     list(MODELS.keys())[0],
+            "persona_img_model": list(IMAGE_MODELS.keys())[0],
+            "persona_desc":      "",
+            "persona_img":       None,
+            "chat_history":      [],  # list of {"role":"user"/"assistant","content":...}
+        })
 
-def chat_interface():
-    persona = st.session_state.persona
-    st.sidebar.markdown(f"### Your Virtual GF: {persona['name']}")
-    if st.sidebar.button("🔄 Reset Persona"):
-        st.session_state.persona = None
-        st.session_state.persona_image = None
-        st.session_state.chat_history = []
-        st.experimental_rerun()
-
-    # Show her portrait
-    st.image(st.session_state.persona_image, use_column_width=False, width=256, caption=persona["name"])
-    st.markdown(f"**Bio:** {persona['bio']}")
-
-    # Display chat history
-    for role, msg in st.session_state.chat_history:
-        if role == "user":
-            st.chat_message("user").write(msg)
-        else:
-            st.chat_message(persona["name"]).write(msg)
-
-    # Input
-    user_input = st.chat_input("Say something…")
-    if user_input:
-        st.session_state.chat_history.append(("user", user_input))
-        # build message list
-        messages = [
-            {"role":"system", "content":
-                f"You are {persona['name']}, {persona['bio']}. Respond as her."}
-        ]
-        for role, msg in st.session_state.chat_history:
-            messages.append({"role": role, "content": msg})
-        try:
-            with st.spinner("She’s typing…"):
-                reply = call_openrouter(messages)
-            st.session_state.chat_history.append(("assistant", reply))
-            st.experimental_rerun()
-        except Exception as e:
-            st.error(f"Chat failed: {e}")
-
+# ====================
+# PAGE
+# ====================
 def main():
-    st.set_page_config("Virtual GF", page_icon="💕", layout="wide")
-    init_state()
+    st.set_page_config("Virtual GF", "❤️", layout="centered")
+    init()
 
-    st.title("💕 Virtual GF Chat")
-    if st.session_state.persona is None:
-        create_persona()
+    # --- GLOBAL CSS & ANIMATION ---
+    st.markdown("""
+    <style>
+      body { background:#111; color:#eee; }
+      .img-container { text-align:center; margin-bottom:16px; }
+      .img-container img {
+        width:280px; border-radius:12px;
+        animation: float 4s ease-in-out infinite;
+      }
+      @keyframes float {
+        0%   { transform: translateY(0px); }
+        50%  { transform: translateY(-10px); }
+        100% { transform: translateY(0px); }
+      }
+      .chat { display:flex; flex-direction:column; gap:8px; margin-top:16px; }
+      .user { align-self:flex-end; background:#0066cc; padding:8px 12px; border-radius:12px; max-width:80%; color:#fff; }
+      .bot  { align-self:flex-start; background:#444;   padding:8px 12px; border-radius:12px; max-width:80%; color:#fff; }
+      .clearfix { clear:both; }
+      .input-row { display:flex; gap:8px; margin-top:12px; }
+      .input-row input { flex:1; padding:8px; border-radius:8px; border:none; }
+      .input-row button { padding:8px 16px; border:none; border-radius:8px; background:#28a745; color:#fff; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.title("👩‍💻 Create Your Virtual GF")
+
+    # Persona builder
+    st.text_input("Name her:", key="persona_name")
+    st.text_area("Give her a little bio/traits:", key="persona_bio", height=80)
+    st.selectbox("Chat model:", list(MODELS.keys()), key="persona_model")
+    st.selectbox("Image model:", list(IMAGE_MODELS.keys()), key="persona_img_model")
+
+    if st.button("🎨 Generate Persona"):
+        if not (st.session_state.persona_name and st.session_state.persona_bio):
+            st.error("Please give her both a name and some traits.")
+        else:
+            # 1) Persona description
+            prompt = (
+                f"You are to roleplay as a virtual girlfriend named "
+                f"{st.session_state.persona_name}, {st.session_state.persona_bio}. "
+                f"Keep replies flirtatious and in-character."
+            )
+            desc = call_openrouter(prompt, st.session_state.persona_model)
+            st.session_state.persona_desc = desc
+
+            # 2) Persona image
+            img_prompt = (
+                f"Photorealistic portrait of {st.session_state.persona_name}, "
+                f"{st.session_state.persona_bio}, studio lighting, high res"
+            )
+            img = generate_image(img_prompt, st.session_state.persona_img_model)
+            st.session_state.persona_img = img
+
+    # Show persona if ready
+    if st.session_state.persona_desc and st.session_state.persona_img:
+        # Animated portrait
+        b64 = img_to_base64(st.session_state.persona_img)
+        st.markdown(f'''
+            <div class="img-container">
+              <img src="data:image/jpeg;base64,{b64}" alt="GF Portrait"/>
+            </div>
+        ''', unsafe_allow_html=True)
+
+        # Chat area
+        st.markdown("<div class='chat'>", unsafe_allow_html=True)
+        for msg in st.session_state.chat_history:
+            cls = "user" if msg["role"]=="user" else "bot"
+            content = msg["content"].replace("\n","<br/>")
+            st.markdown(f'<div class="{cls}">{content}</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Input row
+        col1, col2 = st.columns([4,1])
+        with col1:
+            user_input = st.text_input("", key="__chat_input__", placeholder="Say something...")
+        with col2:
+            if st.button("➡️", key="send_btn"):
+                if user_input.strip():
+                    # add user message
+                    st.session_state.chat_history.append({"role":"user","content":user_input})
+                    # build full prompt
+                    convo = st.session_state.persona_desc + "\n"
+                    for m in st.session_state.chat_history:
+                        if m["role"]=="user":
+                            convo += f"User: {m['content']}\n"
+                        else:
+                            convo += f"{st.session_state.persona_name}: {m['content']}\n"
+                    convo += f"{st.session_state.persona_name}:"
+                    # call
+                    reply = call_openrouter(convo, st.session_state.persona_model)
+                    st.session_state.chat_history.append({"role":"assistant","content":reply})
+                    # clear input
+                    st.session_state["__chat_input__"] = ""
+
     else:
-        chat_interface()
+        st.info("Fill out the form above and click **Generate Persona** to begin!")
+    
 
 if __name__ == "__main__":
     main()
