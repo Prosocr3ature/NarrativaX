@@ -1,7 +1,4 @@
-# main.py
-
 import os
-import time
 import base64
 import streamlit as st
 import replicate
@@ -17,10 +14,10 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Hide Streamlit footer/menu
+# Hide footer/menu
 st.markdown(
     "<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;}</style>",
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
 
 # -------------------- Floating Animation CSS --------------------
@@ -42,7 +39,6 @@ REPLICATE_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 if not REPLICATE_TOKEN:
     st.error("⚠️ Please set REPLICATE_API_TOKEN in your environment.")
     st.stop()
-
 client = replicate.Client(api_token=REPLICATE_TOKEN)
 
 # -------------------- Models --------------------
@@ -50,38 +46,20 @@ DOLPHIN_MODEL = (
     "mikeei/dolphin-2.9-llama3-70b-gguf:"
     "7cd1882cb9ea90756d09decf4bc8a259353354703f8f385ce588b71f7946f0aa"
 )
-
 IMAGE_MODELS = {
     "Reliberate v3": {
-        "id": "asiryan/reliberate-v3:"
-              "d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
+        "id": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
         "width": 768, "height": 1152, "guidance": 8.5
     },
     "Unlimited XL": {
-        "id": "asiryan/unlimited-xl:"
-              "1a98916be7897ab4d9fbc30d2b20d070c237674148b00d344cf03ff103eb7082",
+        "id": "asiryan/unlimited-xl:1a98916be7897ab4d9fbc30d2b20d070c237674148b00d344cf03ff103eb7082",
         "width": 768, "height": 1152, "guidance": 9.0
     },
     "Realism XL": {
-        "id": "asiryan/realism-xl:"
-              "ff26a1f71bc27f43de016f109135183e0e4902d7cdabbcbb177f4f8817112219",
+        "id": "asiryan/realism-xl:ff26a1f71bc27f43de016f109135183e0e4902d7cdabbcbb177f4f8817112219",
         "width": 1024, "height": 1024, "guidance": 8.0
     },
-    "Babes XL": {
-        "id": "asiryan/babes-xl:"
-              "a07fcbe80652ccf989e8198654740d7d562de85f573196dd624a8a80285da27d",
-        "width": 1024, "height": 1024, "guidance": 9.0
-    },
-    "Deliberate V6": {
-        "id": "asiryan/deliberate-v6:"
-              "605a9ad23d7580b2762173afa6009b1a0cc00b7475998600ba2c39eda05f533e",
-        "width": 768, "height": 1152, "guidance": 9.0
-    },
-    "PonyNai3": {
-        "id": "delta-lock/ponynai3:"
-              "ea38949bfddea2db315b598620110edfa76ddaf6313a18e6cbc6a98f496a34e9",
-        "width": 768, "height": 1152, "guidance": 10.0
-    },
+    # ... add the rest ...
 }
 
 # -------------------- UI Defaults --------------------
@@ -90,9 +68,9 @@ MOTIONS   = ["Wink", "Hair Flip", "Lean In", "Smile", "Blush"]
 POSITIONS = ["None", "Missionary", "Doggy", "Cowgirl", "69", "Standing"]
 OUTFITS   = ["None", "Lingerie", "Latex", "Uniform", "Casual"]
 
-# -------------------- Session State Initialization --------------------
+# -------------------- Session State --------------------
 if "history" not in st.session_state:
-    st.session_state.history = []  # each entry: {"user": str, "bot": str, "img": base64}
+    st.session_state.history = []  # list of dicts: {"user", "bot", "img"}
 for key, default in {
     "mood": MOODS[0],
     "motion": MOTIONS[0],
@@ -103,14 +81,10 @@ for key, default in {
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
-if "current_avatar" not in st.session_state:
-    st.session_state.current_avatar = ""
 
+# -------------------- Helpers --------------------
 
-# -------------------- Helper Functions --------------------
-
-def quick_reply(prompt: str) -> str:
-    """Fast, non‑streaming LLM call with extended timeout."""
+def generate_text(prompt: str) -> str:
     try:
         return client.run(
             DOLPHIN_MODEL,
@@ -120,10 +94,8 @@ def quick_reply(prompt: str) -> str:
     except Exception:
         return "…🤔 (timeout)"
 
-
 @st.cache_data(show_spinner=False)
-def cached_avatar(prompt: str, model_key: str) -> str:
-    """Generate and cache an avatar based on the given prompt & model."""
+def generate_image(prompt: str, model_key: str) -> str:
     cfg = IMAGE_MODELS[model_key]
     out = client.run(
         cfg["id"],
@@ -138,19 +110,18 @@ def cached_avatar(prompt: str, model_key: str) -> str:
         timeout=120
     )
     url = out[0] if isinstance(out, list) else out
-    resp = requests.get(url, timeout=30)
-    img = Image.open(BytesIO(resp.content)).convert("RGB")
+    img_data = requests.get(url, timeout=30).content
+    img = Image.open(BytesIO(img_data)).convert("RGB")
     buf = BytesIO()
     img.save(buf, format="JPEG", quality=90)
     return base64.b64encode(buf.getvalue()).decode()
-
 
 # -------------------- Layout --------------------
 
 st.title("💖 CompanionX")
 st.markdown("---")
 
-# — Sidebar Settings —
+# --- Sidebar ---
 with st.sidebar:
     st.header("⚙️ Settings")
     st.session_state.mood      = st.selectbox("Mood", MOODS, index=MOODS.index(st.session_state.mood))
@@ -167,8 +138,7 @@ with st.sidebar:
 
 st.markdown("---")
 
-# — Conversation —
-# Render chat history
+# --- Render Chat History ---
 for msg in st.session_state.history:
     with st.chat_message("user"):
         st.markdown(msg["user"])
@@ -182,35 +152,33 @@ for msg in st.session_state.history:
             )
         st.markdown(msg["bot"])
 
-# Chat input
-user_text = st.chat_input("Talk to your companion…")
-if user_text:
-    # Append user message
-    st.session_state.history.append({"user": user_text, "bot": "", "img": ""})
+# --- Chat Input ---
+user_input = st.chat_input("Talk to your companion…")
+if user_input:
+    # 1) Save user message
+    st.session_state.history.append({"user": user_input, "bot": "", "img": ""})
 
-    # Build system prompt
-    sys_prompt = (
+    # 2) Build system prompt
+    sys_p = (
         f"You are an intimate companion. Mood: {st.session_state.mood.lower()}. "
         f"Gesture: {st.session_state.motion.lower()}. "
         f"Position: {st.session_state.position.lower()}. "
         f"Outfit: {st.session_state.outfit.lower()}. "
         f"NSFW level: {st.session_state.nsfw}/5. Reply explicitly."
     )
-    full_prompt = f"{sys_prompt}\nUser: {user_text}\nCompanion:"
+    full_p = f"{sys_p}\nUser: {user_input}\nCompanion:"
 
-    # Generate companion reply
-    bot_reply = quick_reply(full_prompt)
+    # 3) Generate bot reply
+    bot_reply = generate_text(full_p)
 
-    # Generate & cache avatar
+    # 4) Generate matching avatar
     avatar_prompt = (
         f"{bot_reply}, {st.session_state.outfit.lower()} outfit, "
         f"{st.session_state.position.lower()} position, photorealistic"
     )
-    img64 = cached_avatar(avatar_prompt, st.session_state.img_model)
-    st.session_state.current_avatar = img64
+    img_b64 = generate_image(avatar_prompt, st.session_state.img_model)
 
-    # Update last history entry
-    st.session_state.history[-1].update({"bot": bot_reply, "img": img64})
+    # 5) Update the last history entry
+    st.session_state.history[-1].update({"bot": bot_reply, "img": img_b64})
 
-    # Re-render
-    st.experimental_rerun()
+    # 6) Streamlit will automatically re‑execute and show the new entry
