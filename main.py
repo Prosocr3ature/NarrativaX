@@ -162,68 +162,71 @@ if st.session_state.active_companion:
                     st.image(msg['image'], caption=f"{companion['name']}'s reaction")
     
     # Interactive controls
-    with st.expander("💬 Chat Controls", expanded=True):
-        with st.form("chat_controls"):
-            cols = st.columns(3)
-            with cols[0]:
-                mood = st.selectbox("Mood", MOODS, index=MOODS.index(companion['mood']))
-            with cols[1]:
-                intensity = st.slider("Intensity", 1, 5, 3)
-            with cols[2]:
-                action = st.selectbox("Action", [
-                    "None", "Smile", "Touch", "Whisper", "Kiss", 
-                    "Undress", "Tease", "Command", "Submit"
-                ])
+with st.expander("💬 Chat Controls", expanded=True):
+    with st.form("chat_controls"):
+        cols = st.columns(3)
+        with cols[0]:
+            mood = st.selectbox("Mood", MOODS, index=MOODS.index(companion['mood']))
+        with cols[1]:
+            intensity = st.slider("Intensity", 1, 5, 3)
+        with cols[2]:
+            action = st.selectbox("Action", [
+                "None", "Smile", "Touch", "Whisper", "Kiss", 
+                "Undress", "Tease", "Command", "Submit"
+            ])
+        
+        # Initialize message storage
+        msg = ""
+        st.subheader("Quick Messages")
+        quick_cols = st.columns(3)
+        
+        # Quick message buttons
+        with quick_cols[0]:
+            if st.form_submit_button("💋 Compliment"):
+                msg = "You look amazing today"
+        with quick_cols[1]:
+            if st.form_submit_button("🔥 Flirt"):
+                msg = "I can't stop thinking about you"
+        with quick_cols[2]:
+            if st.form_submit_button("😈 Tease"):
+                msg = "I know what you want..."
+        
+        custom_msg = st.text_input("Or type your own message")
+        final_msg = custom_msg or msg  # Safely handle undefined msg
+        
+        if st.form_submit_button("Send") and final_msg:
+            # Update companion state
+            companion['mood'] = mood
             
-            # Quick message buttons
-            st.subheader("Quick Messages")
-            quick_cols = st.columns(3)
-            with quick_cols[0]:
-                if st.form_submit_button("💋 Compliment"):
-                    msg = "You look amazing today"
-            with quick_cols[1]:
-                if st.form_submit_button("🔥 Flirt"):
-                    msg = "I can't stop thinking about you"
-            with quick_cols[2]:
-                if st.form_submit_button("😈 Tease"):
-                    msg = "I know what you want..."
+            # Generate response
+            prompt = f"""
+            You are {companion['name']}, a {companion['personality']} {companion['relationship']}.
+            Current setting: {companion['setting']}. Mood: {mood}. 
+            User action: {action}. Intensity level: {intensity}.
+            User says: {final_msg}
+            Respond naturally and stay in character.
+            """
             
-            custom_msg = st.text_input("Or type your own message")
-            msg = custom_msg if custom_msg else msg
+            response = chat_with_model(prompt)
+            companion['chat_history'].append({"role": "user", "content": final_msg})
+            companion['chat_history'].append({
+                "role": "assistant",
+                "content": response,
+                "mood": mood,
+                "intensity": intensity
+            })
             
-            if st.form_submit_button("Send") and msg:
-                # Update companion state
-                companion['mood'] = mood
-                
-                # Generate response
-                prompt = f"""
-                You are {companion['name']}, a {companion['personality']} {companion['relationship']}.
-                Current setting: {companion['setting']}. Mood: {mood}. 
-                User action: {action}. Intensity level: {intensity}.
-                User says: {msg}
-                Respond naturally and stay in character.
-                """
-                
-                response = chat_with_model(prompt)
-                companion['chat_history'].append({"role": "user", "content": msg})
-                companion['chat_history'].append({
-                    "role": "assistant",
-                    "content": response,
-                    "mood": mood,
-                    "intensity": intensity
-                })
-                
-                # Generate reaction image
-                image_prompt = f"""
-                {companion['name']}, {companion['appearance']}, {mood} expression,
-                performing {action}, intensity {intensity}, {companion['setting']},
-                8k high detail, realistic lighting
-                """
-                images = generate_image(image_prompt, st.session_state.image_model)
-                if images:
-                    companion['chat_history'][-1]['image'] = images[0]
-                
-                st.rerun()
+            # Generate reaction image
+            image_prompt = f"""
+            {companion['name']}, {companion['appearance']}, {mood} expression,
+            performing {action}, intensity {intensity}, {companion['setting']},
+            8k high detail, realistic lighting
+            """
+            images = generate_image(image_prompt, st.session_state.image_model)
+            if images:
+                companion['chat_history'][-1]['image'] = images[0]
+            
+            st.rerun()
 
     # Scene creation section
     st.divider()
