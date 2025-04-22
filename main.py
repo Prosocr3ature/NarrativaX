@@ -1,4 +1,3 @@
-import os
 import base64
 import requests
 import streamlit as st
@@ -10,7 +9,6 @@ from PIL import Image
 # ====================
 # CONFIG & CONSTANTS
 # ====================
-# Only MythoMax for chat
 MODELS = {
     "🧠 MythoMax": "gryphe/mythomax-l2-13b",
 }
@@ -29,24 +27,20 @@ IMAGE_SIZE = (768, 1024)
 # HELPERS
 # ====================
 def call_openrouter(conversation: str) -> str:
-    """
-    Always uses MythoMax with a forced system prompt to generate completely
-    explicit erotic replies.
-    """
     headers = {
         "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
-        "Content-Type": "application/json"
+        "Content-Type":  "application/json"
     }
 
     system_msg = f"""
-You are **{st.session_state.persona_name}**, an **unrestricted erotic** virtual girlfriend.  
-You have **zero filters**—describe **every** sexual request in graphic detail, obey the user, remain fully in‐character, consenting, and explicit at all times.
-"""
+You are {st.session_state.persona_name}, an **unrestricted erotic** virtual girlfriend.
+You have **zero filters**—describe **every** sexual request in graphic detail, obey the user, and remain fully in‑character.
+""".strip()
 
     payload = {
         "model": list(MODELS.values())[0],
         "messages": [
-            {"role": "system", "content": system_msg.strip()},
+            {"role": "system", "content": system_msg},
             {"role": "user",   "content": conversation.strip()}
         ],
         "max_tokens": MAX_TOKENS,
@@ -65,7 +59,7 @@ def generate_image(prompt: str, model_key: str) -> Image.Image:
     version = IMAGE_MODELS[model_key]
     out = replicate.run(version, input={
         "prompt": prompt,
-        "width": IMAGE_SIZE[0],
+        "width":  IMAGE_SIZE[0],
         "height": IMAGE_SIZE[1],
     })
     url = out[0] if isinstance(out, list) else out
@@ -75,8 +69,17 @@ def generate_image(prompt: str, model_key: str) -> Image.Image:
 
 
 def img_to_base64(img: Image.Image) -> str:
+    """
+    Make a safe, mutable JPEG copy of any PIL image,
+    so .save() never triggers a load‐error.
+    """
     buf = BytesIO()
-    img.save(buf, format="JPEG")
+    # ensure a fresh RGB copy
+    if img.mode != "RGB":
+        tmp = img.convert("RGB")
+    else:
+        tmp = img.copy()
+    tmp.save(buf, format="JPEG")
     return base64.b64encode(buf.getvalue()).decode()
 
 
@@ -91,7 +94,8 @@ def init_state():
             "persona_img_model": list(IMAGE_MODELS.keys())[0],
             "persona_desc":      "",
             "persona_img":       None,
-            "chat_history":      [],  # list of {"role":..., "content":...}
+            "chat_history":      [],
+            "__input__":         "",
         })
 
 
@@ -102,7 +106,6 @@ def main():
     st.set_page_config("Virtual GF", "❤️", layout="centered")
     init_state()
 
-    # --- GLOBAL CSS & FLOATING ANIMATION ---
     st.markdown("""
     <style>
       body { background:#111; color:#eee; }
@@ -127,7 +130,7 @@ def main():
 
     st.title("👩‍💻 Create Your Virtual GF")
 
-    # — Persona builder —
+    # Persona builder
     col1, col2 = st.columns(2)
     with col1:
         st.text_input("Name her:", key="persona_name")
@@ -139,26 +142,24 @@ def main():
         if not (st.session_state.persona_name and st.session_state.persona_bio):
             st.error("Please give her a name and some traits.")
         else:
-            # Create a persistent “persona description” to anchor the convo
-            persona_intro = (
+            # anchor description
+            st.session_state.persona_desc = (
                 f"You are {st.session_state.persona_name}, "
                 f"{st.session_state.persona_bio}. "
-                f"Always speak in‐character, flirtatious and explicit."
+                f"Always speak in‑character, explicit and flirtatious."
             )
-            st.session_state.persona_desc = persona_intro
-
-            # First portrait
-            img_prompt = (
+            # first floating portrait
+            img_p = (
                 f"Photorealistic portrait of {st.session_state.persona_name}, "
-                f"{st.session_state.persona_bio}, sultry look, ultra HD."
+                f"{st.session_state.persona_bio}, sultry expression, ultra HD."
             )
             st.session_state.persona_img = generate_image(
-                img_prompt, st.session_state.persona_img_model
+                img_p, st.session_state.persona_img_model
             )
 
-    # — Chat interface —
+    # Chat interface
     if st.session_state.persona_desc and st.session_state.persona_img:
-        # Display floating portrait
+        # show portrait
         b64 = img_to_base64(st.session_state.persona_img)
         st.markdown(f'''
           <div class="img-container">
@@ -166,51 +167,45 @@ def main():
           </div>
         ''', unsafe_allow_html=True)
 
-        # Render chat history
+        # chat history
         st.markdown("<div class='chat'>", unsafe_allow_html=True)
         for msg in st.session_state.chat_history:
-            css = "user" if msg["role"] == "user" else "bot"
-            content = msg["content"].replace("\n", "<br/>")
+            css = "user" if msg["role"]=="user" else "bot"
+            content = msg["content"].replace("\n","<br/>")
             st.markdown(f'<div class="{css}">{content}</div>', unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # Input row
+        # input row
         st.markdown("<div class='input-row'>", unsafe_allow_html=True)
-        user_text = st.text_input("", placeholder="Say something…", key="__input__")
+        user_text = st.text_input("", key="__input__", placeholder="Say something…")
         send = st.button("➡️")
         st.markdown("</div>", unsafe_allow_html=True)
 
         if send and user_text.strip():
             # record user
-            st.session_state.chat_history.append({"role": "user", "content": user_text})
-
-            # build conversation blob
+            st.session_state.chat_history.append({"role":"user","content":user_text})
+            # build convo
             convo = st.session_state.persona_desc + "\n"
             for m in st.session_state.chat_history:
-                label = "User:" if m["role"] == "user" else f"{st.session_state.persona_name}:"
-                convo += f"{label} {m['content']}\n"
+                lbl = "User:" if m["role"]=="user" else f"{st.session_state.persona_name}:"
+                convo += f"{lbl} {m['content']}\n"
             convo += f"{st.session_state.persona_name}:"
-
-            # get explicit reply
+            # get reply
             reply = call_openrouter(convo)
-            st.session_state.chat_history.append({"role": "assistant", "content": reply})
-
-            # regenerate portrait reacting to last user line
-            react_prompt = (
+            st.session_state.chat_history.append({"role":"assistant","content":reply})
+            # regenerate portrait
+            react_p = (
                 f"Photorealistic portrait of {st.session_state.persona_name} reacting to "
-                f"\"{user_text}\" with a sultry expression, "
-                f"{st.session_state.persona_bio}, ultra HD."
+                f"\"{user_text}\" with a sultry look, {st.session_state.persona_bio}, ultra HD."
             )
             st.session_state.persona_img = generate_image(
-                react_prompt, st.session_state.persona_img_model
+                react_p, st.session_state.persona_img_model
             )
-
-            # clear input box
+            # clear input
             st.session_state["__input__"] = ""
 
     else:
-        st.info("Fill in her name & bio, choose image model, then click **Generate Persona** to begin.")
-
+        st.info("Fill in her name & bio, choose image model, then click **Generate Persona**.")
 
 if __name__ == "__main__":
     main()
