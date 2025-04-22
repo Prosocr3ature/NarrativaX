@@ -1,3 +1,5 @@
+# main.py
+
 import os
 import time
 import base64
@@ -9,12 +11,13 @@ from PIL import Image
 
 # -------------------- Configuration --------------------
 st.set_page_config(
-    page_title="CompanionX",
+    page_title="💖 CompanionX",
     page_icon="💖",
     layout="wide",
     initial_sidebar_state="expanded",
 )
-# hide footer/menu
+
+# Hide Streamlit footer/menu
 st.markdown(
     "<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;}</style>",
     unsafe_allow_html=True,
@@ -39,13 +42,15 @@ REPLICATE_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 if not REPLICATE_TOKEN:
     st.error("⚠️ Please set REPLICATE_API_TOKEN in your environment.")
     st.stop()
+
 client = replicate.Client(api_token=REPLICATE_TOKEN)
 
 # -------------------- Models --------------------
 DOLPHIN_MODEL = (
     "mikeei/dolphin-2.9-llama3-70b-gguf:"
-    "7cd1882cb3ea90756d09decf4bc8a259353354703f8f385ce588b71f7946f0aa"
+    "7cd1882cb9ea90756d09decf4bc8a259353354703f8f385ce588b71f7946f0aa"
 )
+
 IMAGE_MODELS = {
     "Reliberate v3": {
         "id": "asiryan/reliberate-v3:"
@@ -85,9 +90,10 @@ MOTIONS   = ["Wink", "Hair Flip", "Lean In", "Smile", "Blush"]
 POSITIONS = ["None", "Missionary", "Doggy", "Cowgirl", "69", "Standing"]
 OUTFITS   = ["None", "Lingerie", "Latex", "Uniform", "Casual"]
 
+# -------------------- Session State Initialization --------------------
 if "history" not in st.session_state:
-    st.session_state.history = []
-for key, val in {
+    st.session_state.history = []  # each entry: {"user": str, "bot": str, "img": base64}
+for key, default in {
     "mood": MOODS[0],
     "motion": MOTIONS[0],
     "position": POSITIONS[0],
@@ -96,35 +102,55 @@ for key, val in {
     "img_model": list(IMAGE_MODELS.keys())[0],
 }.items():
     if key not in st.session_state:
-        st.session_state[key] = val
+        st.session_state[key] = default
+if "current_avatar" not in st.session_state:
+    st.session_state.current_avatar = ""
 
-# -------------------- Helpers --------------------
-def generate_avatar(prompt: str) -> str:
-    cfg = IMAGE_MODELS[st.session_state.img_model]
+
+# -------------------- Helper Functions --------------------
+
+def quick_reply(prompt: str) -> str:
+    """Fast, non‑streaming LLM call with extended timeout."""
     try:
-        out = client.run(
-            cfg["id"],
-            input={
-                "prompt": prompt,
-                "width": cfg["width"],
-                "height": cfg["height"],
-                "num_inference_steps": 50,
-                "guidance_scale": cfg["guidance"],
-                "negative_prompt": "text, watermark, lowres",
-            },
-        )
-        url = out[0] if isinstance(out, list) else out
-        img = Image.open(BytesIO(requests.get(url).content)).convert("RGB")
-        buf = BytesIO(); img.save(buf, format="JPEG", quality=90)
-        return base64.b64encode(buf.getvalue()).decode()
-    except Exception as e:
-        st.error(f"Image generation failed: {e}")
-        return ""
+        return client.run(
+            DOLPHIN_MODEL,
+            input={"prompt": prompt, "max_length": 300, "temperature": 0.9},
+            timeout=120
+        ).strip()
+    except Exception:
+        return "…🤔 (timeout)"
+
+
+@st.cache_data(show_spinner=False)
+def cached_avatar(prompt: str, model_key: str) -> str:
+    """Generate and cache an avatar based on the given prompt & model."""
+    cfg = IMAGE_MODELS[model_key]
+    out = client.run(
+        cfg["id"],
+        input={
+            "prompt": prompt,
+            "width": cfg["width"],
+            "height": cfg["height"],
+            "num_inference_steps": 25,
+            "guidance_scale": cfg["guidance"],
+            "negative_prompt": "text, watermark, lowres",
+        },
+        timeout=120
+    )
+    url = out[0] if isinstance(out, list) else out
+    resp = requests.get(url, timeout=30)
+    img = Image.open(BytesIO(resp.content)).convert("RGB")
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    return base64.b64encode(buf.getvalue()).decode()
+
 
 # -------------------- Layout --------------------
-st.title("💖 CompanionX")
 
-# — Sidebar —
+st.title("💖 CompanionX")
+st.markdown("---")
+
+# — Sidebar Settings —
 with st.sidebar:
     st.header("⚙️ Settings")
     st.session_state.mood      = st.selectbox("Mood", MOODS, index=MOODS.index(st.session_state.mood))
@@ -132,26 +158,17 @@ with st.sidebar:
     st.session_state.position  = st.selectbox("Position", POSITIONS, index=POSITIONS.index(st.session_state.position))
     st.session_state.outfit    = st.selectbox("Outfit", OUTFITS, index=OUTFITS.index(st.session_state.outfit))
     st.session_state.nsfw      = st.slider("NSFW Level", 1, 5, st.session_state.nsfw)
-    st.session_state.img_model = st.radio("Image Model", list(IMAGE_MODELS.keys()),
-                                          index=list(IMAGE_MODELS.keys()).index(st.session_state.img_model))
-
-# — Standalone Avatar Generator —
-st.subheader("🎨 Generate a Woman from Description")
-avatar_desc = st.text_input("Enter any description…")
-if st.button("Generate Avatar"):
-    with st.spinner("Rendering…"):
-        img64 = generate_avatar(f"{avatar_desc}, photorealistic, 8K, detailed portrait")
-    if img64:
-        st.markdown(
-            f'<div class="floating-img">'
-            f'<img src="data:image/jpeg;base64,{img64}" style="width:100%;">'
-            f'</div>',
-            unsafe_allow_html=True
-        )
+    st.session_state.img_model = st.radio(
+        "Image Model",
+        list(IMAGE_MODELS.keys()),
+        index=list(IMAGE_MODELS.keys()).index(st.session_state.img_model),
+        horizontal=True
+    )
 
 st.markdown("---")
 
 # — Conversation —
+# Render chat history
 for msg in st.session_state.history:
     with st.chat_message("user"):
         st.markdown(msg["user"])
@@ -165,41 +182,35 @@ for msg in st.session_state.history:
             )
         st.markdown(msg["bot"])
 
+# Chat input
 user_text = st.chat_input("Talk to your companion…")
 if user_text:
+    # Append user message
     st.session_state.history.append({"user": user_text, "bot": "", "img": ""})
 
     # Build system prompt
-    sys_p = (
+    sys_prompt = (
         f"You are an intimate companion. Mood: {st.session_state.mood.lower()}. "
         f"Gesture: {st.session_state.motion.lower()}. "
         f"Position: {st.session_state.position.lower()}. "
         f"Outfit: {st.session_state.outfit.lower()}. "
         f"NSFW level: {st.session_state.nsfw}/5. Reply explicitly."
     )
-    full_in = {"prompt": sys_p + "\nUser: " + user_text + "\nCompanion:"}
+    full_prompt = f"{sys_prompt}\nUser: {user_text}\nCompanion:"
 
-    # Stream Dolphin
-    with st.chat_message("assistant"):
-        placeholder = st.empty()
-        bot_reply = ""
-        for chunk in replicate.stream(DOLPHIN_MODEL, input=full_in):
-            bot_reply += chunk
-            placeholder.markdown(bot_reply)
+    # Generate companion reply
+    bot_reply = quick_reply(full_prompt)
 
-        # generate matching avatar
-        img_p = (
-            f"{bot_reply}, {st.session_state.outfit.lower()} outfit, "
-            f"{st.session_state.position.lower()} position, photorealistic"
-        )
-        img64 = generate_avatar(img_p)
-        if img64:
-            st.markdown(
-                f'<div class="floating-img">'
-                f'<img src="data:image/jpeg;base64,{img64}" style="width:100%;">'
-                f'</div>',
-                unsafe_allow_html=True
-            )
+    # Generate & cache avatar
+    avatar_prompt = (
+        f"{bot_reply}, {st.session_state.outfit.lower()} outfit, "
+        f"{st.session_state.position.lower()} position, photorealistic"
+    )
+    img64 = cached_avatar(avatar_prompt, st.session_state.img_model)
+    st.session_state.current_avatar = img64
 
-    # update history
+    # Update last history entry
     st.session_state.history[-1].update({"bot": bot_reply, "img": img64})
+
+    # Re-render
+    st.experimental_rerun()
