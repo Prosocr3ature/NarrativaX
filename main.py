@@ -48,7 +48,7 @@ class CompanionCore:
         """Generate AI response with contextual awareness"""
         try:
             messages = [{"role": "user", "content": prompt}]
-            for h in history[-4:]:
+            for h in [msg for msg in history[-4:] if msg["role"] == "bot"]:
                 messages.append({"role": "assistant", "content": h["response"]})
             
             response = "".join(_self.client.stream(DEFAULT_MODEL, input={"prompt": prompt}))
@@ -100,7 +100,7 @@ class CompanionUI:
             "mood": "Flirty",
             "motion": "Wink",
             "outfit": "Lingerie",
-            "nsfw_level": 2,
+            "nsfw_level": "Explicit",
             "img_model": list(IMAGE_MODELS.keys())[0],
             "current_image": "",
             "image_gallery": [],
@@ -122,11 +122,9 @@ class CompanionUI:
         """Inject custom CSS styles"""
         st.markdown("""
         <style>
-            /* Enhanced main layout */
             .main {background: #0a0a0a !important; color: #f0f0f0;}
             .st-emotion-cache-6qob1r {background: #1a1a1a;}
             
-            /* Modern avatar panel */
             .avatar-panel {
                 background: linear-gradient(45deg, #1a1a1a, #2a2a2a);
                 border-radius: 15px;
@@ -136,7 +134,6 @@ class CompanionUI:
                 overflow: hidden;
             }
             
-            /* Animated chat bubbles */
             .user-bubble {
                 background: #2b2b2b;
                 border-radius: 15px 15px 0 15px;
@@ -157,7 +154,6 @@ class CompanionUI:
                 transition: transform 0.2s ease;
             }
             
-            /* Enhanced floating animation */
             @keyframes float {
                 0%, 100% { transform: translateY(0); filter: drop-shadow(0 5px 15px rgba(255,50,100,0.4)); }
                 50% { transform: translateY(-15px); filter: drop-shadow(0 10px 20px rgba(255,50,100,0.6)); }
@@ -170,7 +166,6 @@ class CompanionUI:
                 transition: transform 0.3s ease;
             }
             
-            /* Professional quick actions */
             .quick-actions {
                 position: fixed;
                 bottom: 0;
@@ -186,7 +181,6 @@ class CompanionUI:
                 border-top: 1px solid #333;
             }
             
-            /* Loading spinner customization */
             .stSpinner > div { border-color: #ff3264 transparent transparent transparent !important; }
         </style>
         """, unsafe_allow_html=True)
@@ -214,7 +208,7 @@ class CompanionUI:
                     )
                     st.session_state.nsfw_level = st.select_slider(
                         "Intensity", options=NSFW_LEVELS,
-                        value=NSFW_LEVELS[st.session_state.nsfw_level],
+                        value=st.session_state.nsfw_level,
                         help="Control content explicitness"
                     )
                 
@@ -259,19 +253,23 @@ class CompanionUI:
                 
     def _render_gallery_controls(self):
         """Render gallery navigation controls"""
-        col1, col2, col3 = st.columns([2,6,2])
-        with col1:
-            if st.button("◀️ Previous", disabled=len(st.session_state.image_gallery) < 2):
-                self._cycle_gallery(-1)
-        with col3:
-            if st.button("Next ▶️", disabled=len(st.session_state.image_gallery) < 2):
-                self._cycle_gallery(1)
+        if len(st.session_state.image_gallery) > 1:
+            col1, col2, col3 = st.columns([2,6,2])
+            with col1:
+                if st.button("◀️ Previous"):
+                    self._cycle_gallery(-1)
+            with col3:
+                if st.button("Next ▶️"):
+                    self._cycle_gallery(1)
                 
     def _cycle_gallery(self, direction: int):
         """Cycle through image gallery"""
-        current_index = st.session_state.image_gallery.index(st.session_state.current_image)
-        new_index = (current_index + direction) % len(st.session_state.image_gallery)
-        st.session_state.current_image = st.session_state.image_gallery[new_index]
+        try:
+            current_index = st.session_state.image_gallery.index(st.session_state.current_image)
+            new_index = (current_index + direction) % len(st.session_state.image_gallery)
+            st.session_state.current_image = st.session_state.image_gallery[new_index]
+        except ValueError:
+            st.session_state.current_image = st.session_state.image_gallery[-1]
         st.rerun()
                 
     def _render_chat(self):
@@ -350,7 +348,7 @@ class CompanionUI:
     def _build_prompt(self, text: str) -> str:
         """Construct context-aware prompt for AI model"""
         return (
-            f"NSFW Level: {NSFW_LEVELS[st.session_state.nsfw_level]}\n"
+            f"NSFW Level: {st.session_state.nsfw_level}\n"
             f"Mood: {st.session_state.mood}\n"
             f"Gesture: {st.session_state.motion}\n"
             f"Outfit: {st.session_state.outfit}\n"
@@ -361,7 +359,7 @@ class CompanionUI:
     
     def _get_recent_context(self) -> str:
         """Extract recent conversation context"""
-        return " | ".join([msg["content"] for msg in st.session_state.history[-3:]])
+        return " | ".join([msg["content"] for msg in st.session_state.history[-3:] if msg["role"] == "user"])
     
     def _render_quick_actions(self):
         """Render quick action buttons with enhanced UI"""
