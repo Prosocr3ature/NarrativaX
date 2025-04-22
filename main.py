@@ -1,11 +1,3 @@
-Here’s the complete main.py file for your Virtual Companion app, incorporating:
-	•	Per-message NSFW sliders
-	•	Memory persistence per companion
-	•	Explicit content injection logic
-	•	A dedicated editor for sex scene creation
-
-This implementation utilizes Streamlit’s st.session_state for session management  and integrates an editable code editor component for scene scripting .
-
 import os
 import json
 import requests
