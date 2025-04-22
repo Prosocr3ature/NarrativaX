@@ -1,4 +1,4 @@
-Requirements for this code? import os
+import os
 import json
 import requests
 import streamlit as st
