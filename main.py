@@ -55,8 +55,9 @@ TONES = {
 }
 
 IMAGE_MODELS = {
-    "🎨 Realistic Vision": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
-    "🔥 Reliberate NSFW":  "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29"
+    "🎨 Realistic Vision":    "lucataco/realistic-vision-v5.1:…",
+    "🔥 Reliberate NSFW":     "asiryan/reliberate-v3:…",
+    "🍑 Uber‑Realistic Porn": "ductridev/uber-realistic-porn-merge-urpm-1:1cca487c3bfe167e987fc3639477cf2cf617747cd38772421241b04d27a113a8",
 }
 
 MODELS = {
