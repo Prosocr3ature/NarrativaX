@@ -6,164 +6,146 @@ import base64
 from io import BytesIO
 from PIL import Image
 
-# ——— Page & Style Setup —————————————————————————————————————————————
+# ——— Page Setup & Styling —————————————————————————————————————
 st.set_page_config(
     page_title="💋 AI Companion Chat",
     page_icon="💋",
     layout="wide",
 )
 st.markdown("""
-    <style>
-      /* Hide default Streamlit header & footer */
-      #MainMenu, footer {visibility: hidden;}
-      /* Darken background for immersion */
-      [data-testid="stAppViewContainer"] {background: #0a0a0a;}
-      /* Chat bubble styles */
-      .user-msg {background: #2a2a2a; padding:10px; border-radius:10px; margin:5px 0; color:#fff;}
-      .bot-msg  {background: #3a3a3a; padding:10px; border-radius:10px; margin:5px 0; color:#eee;}
-    </style>
+<style>
+   /* Hide default Streamlit header & footer */
+   #MainMenu, footer {visibility: hidden;}
+   /* Dark background */
+   [data-testid="stAppViewContainer"] {background: #0a0a0a;}
+   /* Chat bubbles */
+   .user {background:#2a2a2a; color:#fff; padding:12px; border-radius:8px; margin:6px 0;}
+   .bot  {background:#3a3a3a; color:#eee; padding:12px; border-radius:8px; margin:6px 0;}
+</style>
 """, unsafe_allow_html=True)
 
-# ——— Credentials —————————————————————————————————————————————————
+# ——— Credentials ——————————————————————————————————————————————
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 if not OPENROUTER_API_KEY:
-    st.error("🔑 Set OPENROUTER_API_KEY in your environment.")
+    st.error("🔑 Please set OPENROUTER_API_KEY in your environment.")
     st.stop()
 if not REPLICATE_API_TOKEN:
-    st.error("🔑 Set REPLICATE_API_TOKEN in your environment.")
+    st.error("🔑 Please set REPLICATE_API_TOKEN in your environment.")
     st.stop()
 
 # Initialize Replicate client
 replicate_client = replicate.Client(api_token=REPLICATE_API_TOKEN)
 
-# ——— Models & Options ——————————————————————————————————————————————
-LLM_MODEL   = "gryphe/mythomax-l2-13b"
+# ——— Models & Controls ——————————————————————————————————————————
+LLM_MODEL    = "gryphe/mythomax-l2-13b"
 IMAGE_MODELS = {
-    "Realistic":  "lucataco/realistic-vision-v5.1",
-    "Reliberate": "asiryan/reliberate-v3",
+    "Realistic":  "dreamlike-art/dreamlike-photoreal-2.0",
+    "Reliberate": "stability-ai/sdxl"
 }
 MOODS = ["Flirty", "Loving", "Dominant", "Submissive", "Playful"]
 
-# ——— Session State ————————————————————————————————————————————————
+# ——— Session State ——————————————————————————————————————————————
 if "history" not in st.session_state:
-    st.session_state.history = []  # list of dicts: {speaker, text, img_b64}
-if "image_style" not in st.session_state:
-    st.session_state.image_style = "Realistic"
+    st.session_state.history = []  # [{speaker,text,img_b64},...]
 if "mood" not in st.session_state:
     st.session_state.mood = MOODS[0]
+if "style" not in st.session_state:
+    st.session_state.style = list(IMAGE_MODELS.keys())[0]
 
-# ——— Helpers ——————————————————————————————————————————————————————
+# ——— Helper Functions ——————————————————————————————————————————
 def chat_with_mythomax(system_prompt: str, user_prompt: str) -> str:
-    """Send a chat-completion request to OpenRouter/MythoMax."""
-    hdr = {
+    headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
-    msgs = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user",   "content": user_prompt}
-    ]
     payload = {
         "model": LLM_MODEL,
-        "messages": msgs,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_prompt},
+        ],
         "temperature": 0.8,
-        "max_tokens": 400,
+        "max_tokens": 400
     }
-    try:
-        resp = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=hdr, json=payload, timeout=30
-        )
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        return f"❌ LLM Error: {e}"
+    r = requests.post("https://openrouter.ai/api/v1/chat/completions",
+                      headers=headers, json=payload, timeout=30)
+    r.raise_for_status()
+    return r.json()["choices"][0]["message"]["content"].strip()
 
 def generate_avatar(prompt: str) -> str:
-    """Generate one image via Replicate and return as base64 string."""
-    model_id = IMAGE_MODELS[st.session_state.image_style]
+    model_id = IMAGE_MODELS[st.session_state.style]
     try:
-        urls = replicate_client.run(
+        outputs = replicate_client.run(
             model_id,
             input={
-                "prompt": prompt + ", photorealistic, detailed, 8k",
+                "prompt": prompt + ", photorealistic, 8k, detailed",
                 "width": 768,
                 "height": 1024,
                 "num_outputs": 1
             }
         )
-        url = urls[0] if isinstance(urls, (list, tuple)) else urls
+        url = outputs[0] if isinstance(outputs, (list,tuple)) else outputs
         img = Image.open(BytesIO(requests.get(url, timeout=20).content))
-        buf = BytesIO()
-        img.save(buf, format="JPEG")
+        buf = BytesIO(); img.save(buf, format="JPEG")
         return base64.b64encode(buf.getvalue()).decode()
     except Exception as e:
         st.error(f"🖼️ Image Error: {e}")
         return ""
 
-# ——— UI —————————————————————————————————————————————————————————
+# ——— UI ——————————————————————————————————————————————————————
 st.title("💋 AI Companion Chat")
-st.write("Chat live with a photorealistic avatar powered by MythoMax L2‑13B & Stable Diffusion.")
+st.write("A live, photoreal avatar powered by MythoMax & Stable Diffusion.")
 
-# — Controls: Mood & Image Style ————————————————————————————————
-c1, c2 = st.columns([1,1])
+# — Controls ————————————————————————————————————————————————
+c1, c2 = st.columns(2)
 with c1:
-    st.session_state.mood = st.selectbox("Mood", MOODS, index=MOODS.index(st.session_state.mood))
+    st.session_state.mood = st.selectbox("Mood", MOODS,
+                                         index=MOODS.index(st.session_state.mood))
 with c2:
-    st.session_state.image_style = st.radio(
-        "Image Style",
-        list(IMAGE_MODELS.keys()),
-        index=list(IMAGE_MODELS).index(st.session_state.image_style),
-        horizontal=True
-    )
+    st.session_state.style = st.radio("Image Style",
+                                      list(IMAGE_MODELS.keys()),
+                                      index=list(IMAGE_MODELS).index(st.session_state.style),
+                                      horizontal=True)
 
 st.markdown("---")
 
-# — Display conversation history ——————————————————————————————
-for entry in st.session_state.history:
-    if entry["speaker"] == "User":
-        st.markdown(f"<div class='user-msg'>**You:** {entry['text']}</div>", unsafe_allow_html=True)
-    else:
-        with st.container():
-            if entry["img_b64"]:
-                st.image(
-                    "data:image/jpeg;base64," + entry["img_b64"],
-                    use_column_width=True,
-                    caption="Companion"
-                )
-            st.markdown(f"<div class='bot-msg'>**Companion:** {entry['text']}</div>", unsafe_allow_html=True)
+# — Render Conversation ——————————————————————————————————————
+for msg in st.session_state.history:
+    css = "user" if msg["speaker"]=="User" else "bot"
+    if msg["speaker"]=="Companion" and msg["img_b64"]:
+        st.image("data:image/jpeg;base64,"+msg["img_b64"],
+                 use_column_width=True, caption="Companion")
+    st.markdown(f"<div class='{css}'><b>{msg['speaker']}:</b> {msg['text']}</div>",
+                unsafe_allow_html=True)
 
-# — Chat input ———————————————————————————————————————————————————
+# — Chat Input —————————————————————————————————————————————————
 user_text = st.chat_input("Say something to your companion…")
 if user_text:
-    # 1) Append user message
+    # 1) record you
     st.session_state.history.append({
-        "speaker": "User",
-        "text": user_text,
-        "img_b64": ""
+        "speaker":"User","text":user_text,"img_b64":""
     })
 
-    # 2) Build system & user prompts
-    recent = "\n".join(f"{h['speaker']}: {h['text']}" for h in st.session_state.history[-6:])
-    system_prompt = f"You are a sultry virtual companion. Mood: {st.session_state.mood.lower()}."
-    user_prompt = f"{recent}\nUser: {user_text}\nCompanion:"
+    # 2) build prompt
+    recent = "\n".join(f"{h['speaker']}: {h['text']}"
+                      for h in st.session_state.history[-6:])
+    system_p = f"You are a sultry virtual companion. Mood: {st.session_state.mood.lower()}."
+    user_p   = f"{recent}\nUser: {user_text}\nCompanion:"
 
-    # 3) Generate companion reply
+    # 3) get reply
     with st.spinner("Companion is typing…"):
-        bot_reply = chat_with_mythomax(system_prompt, user_prompt)
+        reply = chat_with_mythomax(system_p, user_p)
 
-    # 4) Generate avatar reaction
-    avatar_prompt = f"virtual companion, mood {st.session_state.mood.lower()}, reacting to '{user_text}', portrait"
+    # 4) get avatar
+    avatar_p = (f"virtual companion, mood {st.session_state.mood.lower()}, "
+                f"reacting to '{user_text}', portrait")
     with st.spinner("Generating avatar…"):
-        img_b64 = generate_avatar(avatar_prompt)
+        img64 = generate_avatar(avatar_p)
 
-    # 5) Append bot message
+    # 5) record companion
     st.session_state.history.append({
-        "speaker": "Companion",
-        "text": bot_reply,
-        "img_b64": img_b64
+        "speaker":"Companion","text":reply,"img_b64":img64
     })
 
-    # 6) Rerun to show new content
-    st.experimental_rerun()
+    # no explicit rerun needed — state mutation triggers rerun itself
