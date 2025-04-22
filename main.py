@@ -11,19 +11,19 @@ from PIL import Image
 # CONFIG & CONSTANTS
 # ====================
 MODELS = {
-    "🧠 MythoMax": "gryphe/mythomax-l2-13b",
-    "🐬 Dolphin":  "cognitivecomputations/dolphin-mixtral",
-    "🤖 OpenChat": "openchat/openchat-3.5-0106",
+    "🧠 MythoMax":     "gryphe/mythomax-l2-13b",
+    "🐬 Dolphin":      "cognitivecomputations/dolphin-mixtral",
+    "🤖 OpenChat":     "openchat/openchat-3.5-0106",
 }
 
 IMAGE_MODELS = {
-    "🎨 Realistic Vision": "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
-    "🔥 Reliberate NSFW":  "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
-    "🔞 XL Porn Merge":    "John6666/uber-realistic-porn-merge-xl-urpmxl-v3-sdxl",
+    "🎨 Realistic Vision":    "lucataco/realistic-vision-v5.1:2c8e954decbf70b7607a4414e5785ef9e4de4b8c51d50fb8b8b349160e0ef6bb",
+    "🔥 Reliberate NSFW":     "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
+    "🔞 XL Porn Merge SDXL":  "John6666/uber-realistic-porn-merge-xl-urpmxl-v3-sdxl",
 }
 
-MAX_TOKENS = 1800
-IMAGE_SIZE = (768, 1024)
+MAX_TOKENS  = 1800
+IMAGE_SIZE  = (768, 1024)
 
 
 # ====================
@@ -32,7 +32,7 @@ IMAGE_SIZE = (768, 1024)
 def call_openrouter(prompt: str, model_key: str) -> str:
     headers = {
         "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
-        "Content-Type": "application/json"
+        "Content-Type":  "application/json"
     }
     payload = {
         "model":       MODELS[model_key],
@@ -79,7 +79,7 @@ def init_state():
             "persona_img_model": list(IMAGE_MODELS.keys())[0],
             "persona_desc":      "",
             "persona_img":       None,
-            "chat_history":      [],  # list of {"role","content"}
+            "chat_history":      [],  # [{"role","content"},...]
         })
 
 
@@ -116,24 +116,28 @@ def main():
     st.title("👩‍💻 Create Your Virtual GF")
 
     # — Persona builder —
-    st.text_input("Name her:", key="persona_name")
-    st.text_area("Give her a little bio/traits:", key="persona_bio", height=80)
-    st.selectbox("Chat model:", list(MODELS.keys()), key="persona_model")
-    st.selectbox("Image model:", list(IMAGE_MODELS.keys()), key="persona_img_model")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.text_input("Name her:", key="persona_name")
+        st.selectbox("Chat model:", list(MODELS.keys()), key="persona_model")
+    with col2:
+        st.text_area("Give her a bio/traits:", key="persona_bio", height=100)
+        st.selectbox("Image model:", list(IMAGE_MODELS.keys()), key="persona_img_model")
 
-    if st.button("🎨 Generate Persona"):
+    if st.button("🎨 Generate Persona", use_container_width=True):
         if not (st.session_state.persona_name and st.session_state.persona_bio):
-            st.error("Please enter both a name and some traits.")
+            st.error("Please give her a name and some traits.")
         else:
-            # Build system persona description
+            # Build in‐character system prompt
             sys_prompt = (
-                f"You are a virtual girlfriend named {st.session_state.persona_name}. "
-                f"{st.session_state.persona_bio}. Speak in-character, lightly flirtatious."
+                f"You are {st.session_state.persona_name}, "
+                f"{st.session_state.persona_bio}. Speak in‑character, lightly flirtatious."
             )
             st.session_state.persona_desc = call_openrouter(
                 sys_prompt, st.session_state.persona_model
             )
-            # Initial portrait
+
+            # First portrait
             img_prompt = (
                 f"Photorealistic portrait of {st.session_state.persona_name}, "
                 f"{st.session_state.persona_bio}, friendly expression, studio lighting."
@@ -142,35 +146,35 @@ def main():
                 img_prompt, st.session_state.persona_img_model
             )
 
-    # — Chat interface once persona exists —
+    # — Chat interface —  
     if st.session_state.persona_desc and st.session_state.persona_img:
-        # Display current portrait
+        # Display the floating portrait
         b64 = img_to_base64(st.session_state.persona_img)
         st.markdown(f'''
           <div class="img-container">
-            <img src="data:image/jpeg;base64,{b64}" alt="GF Portrait"/>
+            <img src="data:image/jpeg;base64,{b64}" />
           </div>
         ''', unsafe_allow_html=True)
 
-        # Chat history bubbles
+        # Show history
         st.markdown("<div class='chat'>", unsafe_allow_html=True)
         for msg in st.session_state.chat_history:
-            cls = "user" if msg["role"] == "user" else "bot"
+            css = "user" if msg["role"]=="user" else "bot"
             content = msg["content"].replace("\n", "<br/>")
-            st.markdown(f'<div class="{cls}">{content}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="{css}">{content}</div>', unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # Input form (auto‑clears)
-        with st.form("chat_form", clear_on_submit=True):
-            user_input = st.text_input("", key="chat_input", placeholder="Say something...")
-            submitted = st.form_submit_button("➡️")
-            if submitted and user_input.strip():
-                # 1) add user message
+        # Input form
+        with st.form("chat", clear_on_submit=True):
+            user_input = st.text_input("", placeholder="Say something…")
+            submit = st.form_submit_button("➡️")
+            if submit and user_input.strip():
+                # 1) record user
                 st.session_state.chat_history.append({
                     "role": "user", "content": user_input.strip()
                 })
 
-                # 2) build conversation prompt
+                # 2) build conversation
                 convo = st.session_state.persona_desc + "\n"
                 for m in st.session_state.chat_history:
                     speaker = "User:" if m["role"]=="user" else f"{st.session_state.persona_name}:"
@@ -183,7 +187,7 @@ def main():
                     "role": "assistant", "content": reply
                 })
 
-                # 4) **Regenerate her portrait** based on your last line
+                # 4) regenerate her portrait reacting to your last line
                 react_prompt = (
                     f"Photorealistic portrait of {st.session_state.persona_name} reacting to "
                     f"\"{user_input.strip()}\" with a warm, expressive look, "
@@ -193,10 +197,10 @@ def main():
                     react_prompt, st.session_state.persona_img_model
                 )
 
-                # force rerun so new image & message appear
-                st.experimental_rerun()
+        # end of chat form
+
     else:
-        st.info("Fill in her name & bio, pick models, then click **Generate Persona** to begin.")
+        st.info("Fill in her name & bio, choose models, then click **Generate Persona** to begin.")
 
 if __name__ == "__main__":
     main()
