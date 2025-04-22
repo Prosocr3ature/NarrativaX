@@ -1,4 +1,4 @@
-streamlit>=1.10
+streamlit
 replicate
 Pillow
 requests
