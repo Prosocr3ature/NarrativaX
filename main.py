@@ -5,240 +5,301 @@ import streamlit as st
 from io import BytesIO
 from PIL import Image
 import replicate
+from typing import Dict, List
 
-# -------------------- Page Config & Fullscreen CSS --------------------
-st.set_page_config(
-    page_title="💖 CompanionX",
-    page_icon="💖",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
-
-st.markdown("""
-<style>
-  /* hide default header & footer */
-  #MainMenu, header, footer {visibility: hidden !important;}
-  /* make the main container fill the viewport */
-  .appview-container .main {padding: 0; margin: 0;}
-  .block-container {padding: 0 1rem 1rem 1rem;}
-  /* two‑panel layout */
-  .panel {height: calc(100vh - 4rem); overflow: auto;}
-  .avatar-panel {background: #111; color: white; padding:1rem;}
-  .chat-panel {background: #1e1e1e; color: #ddd; padding:1rem;}
-  /* Quick Actions bar */
-  .quick-bar {
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    background: #222; padding: 0.5rem;
-    display: flex; overflow-x: auto;
-    z-index: 99;
-  }
-  .quick-bar button {
-    margin-right: 0.5rem;
-    background: #444; color: #fff;
-    border: none; padding: 0.5rem 1rem;
-    border-radius: 5px;
-    cursor: pointer;
-  }
-  .quick-bar button:hover {background: #666;}
-  /* Floating avatar */
-  @keyframes float {0%,100%{transform:translateY(0);}50%{transform:translateY(-10px);}}
-  .floating-img {animation: float 3s ease-in-out infinite; max-width:100%;}
-</style>
-""", unsafe_allow_html=True)
-
-# -------------------- API Setup --------------------
-REPLICATE_TOKEN = os.getenv("REPLICATE_API_TOKEN")
-if not REPLICATE_TOKEN:
-    st.error("⚠️ Please set REPLICATE_API_TOKEN in your environment.")
-    st.stop()
-client = replicate.Client(api_token=REPLICATE_TOKEN)
-
-# -------------------- Models & Defaults --------------------
-DOLPHIN_MODEL = (
-    "mikeei/dolphin-2.9-llama3-70b-gguf:"
-    "7cd1882cb3ea90756d09decf4bc8a259353354703f8f385ce588b71f7946f0aa"
-)
+# -------------------- Constants & Configuration --------------------
+DEFAULT_MODEL = "mikeei/dolphin-2.9-llama3-70b-gguf:7cd1882cb3ea90756d09decf4bc8a259353354703f8f385ce588b71f7946f0aa"
+NSFW_LEVELS = ["Mild", "Moderate", "Explicit", "Hardcore", "Unrestricted"]
+MOTION_EMOJIS = {"Wink": "😉", "Hair Flip": "💁♀️", "Lean In": "👄", "Smile": "😊", "Blush": "😳"}
 
 IMAGE_MODELS = {
     "Reliberate v3": {
-        "id": "asiryan/reliberate-v3:"
-              "d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
+        "id": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
         "width": 768, "height": 1152, "guidance": 8.5
     },
     "Unlimited XL": {
-        "id": "asiryan/unlimited-xl:"
-              "1a98916be7897ab4d9fbc30d2b20d070c237674148b00d344cf03ff103eb7082",
+        "id": "asiryan/unlimited-xl:1a98916be7897ab4d9fbc30d2b20d070c237674148b00d344cf03ff103eb7082",
         "width": 768, "height": 1152, "guidance": 9.0
     },
     "Realism XL": {
-        "id": "asiryan/realism-xl:"
-              "ff26a1f71bc27f43de016f109135183e0e4902d7cdabbcbb177f4f8817112219",
+        "id": "asiryan/realism-xl:ff26a1f71bc27f43de016f109135183e0e4902d7cdabbcbb177f4f8817112219",
         "width": 1024, "height": 1024, "guidance": 8.0
     },
     "Babes XL": {
-        "id": "asiryan/babes-xl:"
-              "a07fcbe80652ccf989e8198654740d7d562de85f573196dd624a8a80285da27d",
+        "id": "asiryan/babes-xl:a07fcbe80652ccf989e8198654740d7d562de85f573196dd624a8a80285da27d",
         "width": 1024, "height": 1024, "guidance": 9.0
-    },
-    "Deliberate V6": {
-        "id": "asiryan/deliberate-v6:"
-              "605a9ad23d7580b2762173afa6009b1a0cc00b7475998600ba2c39eda05f533e",
-        "width": 768, "height": 1152, "guidance": 9.0
-    },
-    "PonyNai3": {
-        "id": "delta-lock/ponynai3:"
-              "ea38949bfddea2db315b598620110edfa76ddaf6313a18e6cbc6a98f496a34e9",
-        "width": 768, "height": 1152, "guidance": 10.0
     },
 }
 
-MOODS     = ["Flirty","Loving","Dominant","Submissive","Playful"]
-MOTIONS   = ["Wink","Hair Flip","Lean In","Smile","Blush"]
-POSITIONS = ["None","Missionary","Doggy","Cowgirl","69","Standing"]
-OUTFITS   = ["None","Lingerie","Latex","Uniform","Casual"]
-QUICK     = [
-    "Blowjob","Titty Fucking","Handjob","Lap Dance","Strip Tease",
-    "69","Doggy","Cowgirl","Missionary"
-]
-
-# initialize session state
-if "history" not in st.session_state:
-    st.session_state.history = []
-defaults = dict(
-    mood=MOODS[0],
-    motion=MOTIONS[0],
-    position=POSITIONS[0],
-    outfit=OUTFITS[0],
-    nsfw=3,
-    img_model=list(IMAGE_MODELS.keys())[0],
-    last_avatar=""
-)
-for k,v in defaults.items():
-    st.session_state.setdefault(k, v)
-
-# -------------------- Helpers --------------------
-def gen_avatar(prompt: str, steps: int = 20) -> str:
-    cfg = IMAGE_MODELS[st.session_state.img_model]
-    result = client.run(
-        cfg["id"],
-        input={
-            "prompt": prompt,
-            "width": cfg["width"],
-            "height": cfg["height"],
-            "num_inference_steps": steps,
-            "guidance_scale": cfg["guidance"],
-            "negative_prompt": "text, watermark, lowres",
-        },
-    )
-    url = result[0] if isinstance(result, list) else result
-    img = Image.open(BytesIO(requests.get(url, timeout=10).content)).convert("RGB")
-    buf = BytesIO()
-    img.save(buf, format="JPEG", quality=75)
-    return base64.b64encode(buf.getvalue()).decode()
-
-# -------------------- Mode Switch & Settings --------------------
-mode = st.radio("", ["Chat","Instruct"], horizontal=True)
-
-with st.expander("⚙️ Settings", expanded=False):
-    st.selectbox("Mood", MOODS, key="mood")
-    st.selectbox("Gesture", MOTIONS, key="motion")
-    st.selectbox("Position", POSITIONS, key="position")
-    st.selectbox("Outfit", OUTFITS, key="outfit")
-    st.slider("NSFW Level", 1, 5, key="nsfw")
-    st.radio("Image Model", list(IMAGE_MODELS.keys()), key="img_model")
-
-# -------------------- Two‑Column Layout --------------------
-col1, col2 = st.columns([3,7], gap="small")
-
-with col1:
-    st.markdown('<div class="panel avatar-panel">', unsafe_allow_html=True)
-    st.markdown("### Your Companion")
-    if st.session_state.last_avatar:
-        st.markdown(
-            f'<img class="floating-img" src="data:image/jpeg;base64,{st.session_state.last_avatar}">',
-            unsafe_allow_html=True
+class CompanionCore:
+    def __init__(self):
+        self.client = replicate.Client(api_token=os.getenv("REPLICATE_API_TOKEN"))
+        
+    def generate_response(self, prompt: str, history: List[Dict]) -> str:
+        messages = [{"role": "user", "content": prompt}]
+        for h in history[-4:]:
+            messages.append({"role": "assistant", "content": h["bot"]})
+            
+        return "".join(self.client.stream(DEFAULT_MODEL, input={"prompt": prompt}))
+    
+    def generate_image(self, prompt: str, model: str) -> str:
+        cfg = IMAGE_MODELS[model]
+        result = self.client.run(
+            cfg["id"],
+            input={
+                "prompt": f"{prompt}, 8k resolution, cinematic lighting, photorealistic",
+                "width": cfg["width"],
+                "height": cfg["height"],
+                "guidance_scale": cfg["guidance"],
+                "negative_prompt": "text, watermark, lowres, deformed"
+            }
         )
-    else:
-        st.info("Use Chat or Instruct to generate an avatar…")
-    st.markdown("</div>", unsafe_allow_html=True)
+        return self._process_image(result[0])
+    
+    def _process_image(self, url: str) -> str:
+        response = requests.get(url, timeout=15)
+        img = Image.open(BytesIO(response.content)).convert("RGB")
+        buffer = BytesIO()
+        img.save(buffer, format="JPEG", quality=85)
+        return base64.b64encode(buffer.getvalue()).decode()
 
-with col2:
-    st.markdown('<div class="panel chat-panel">', unsafe_allow_html=True)
-
-    if mode == "Chat":
-        # render history
-        for turn in st.session_state.history:
-            st.markdown(f"**You:** {turn['user']}")
-            if turn["img"]:
+class CompanionUI:
+    def __init__(self):
+        self.core = CompanionCore()
+        self._init_session_state()
+        self._setup_page_config()
+        self._inject_custom_css()
+        
+    def _init_session_state(self):
+        defaults = {
+            "history": [],
+            "mood": "Flirty",
+            "motion": "Wink",
+            "outfit": "Lingerie",
+            "nsfw_level": 3,
+            "img_model": list(IMAGE_MODELS.keys())[0],
+            "current_image": "",
+            "image_gallery": []
+        }
+        for key, value in defaults.items():
+            st.session_state.setdefault(key, value)
+            
+    def _setup_page_config(self):
+        st.set_page_config(
+            page_title="🔥 Intima",
+            page_icon="💋",
+            layout="wide",
+            initial_sidebar_state="collapsed"
+        )
+        
+    def _inject_custom_css(self):
+        st.markdown("""
+        <style>
+            /* Main layout */
+            .main {background: #0a0a0a !important; color: #f0f0f0;}
+            .st-emotion-cache-6qob1r {background: #1a1a1a;}
+            
+            /* Avatar panel */
+            .avatar-panel {
+                background: linear-gradient(45deg, #1a1a1a, #2a2a2a);
+                border-radius: 15px;
+                padding: 1rem;
+                box-shadow: 0 0 20px rgba(255,50,150,0.1);
+            }
+            
+            /* Chat bubbles */
+            .user-bubble {
+                background: #2b2b2b;
+                border-radius: 15px 15px 0 15px;
+                padding: 1rem;
+                margin: 0.5rem 0;
+                max-width: 70%;
+                align-self: flex-end;
+            }
+            
+            .bot-bubble {
+                background: #363636;
+                border-radius: 15px 15px 15px 0;
+                padding: 1rem;
+                margin: 0.5rem 0;
+                max-width: 70%;
+                align-self: flex-start;
+            }
+            
+            /* Floating animation */
+            @keyframes float {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-15px); }
+            }
+            .floating-avatar {
+                animation: float 3s ease-in-out infinite;
+                border-radius: 15px;
+                border: 2px solid #ff3264;
+                box-shadow: 0 0 30px rgba(255,50,100,0.3);
+            }
+            
+            /* Quick actions bar */
+            .quick-actions {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: rgba(26,26,26,0.95);
+                backdrop-filter: blur(10px);
+                padding: 0.5rem;
+                display: flex;
+                gap: 0.5rem;
+                overflow-x: auto;
+                z-index: 999;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+        
+    def _render_sidebar(self):
+        with st.sidebar:
+            with st.expander("🛠️ Companion Settings", expanded=True):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.session_state.mood = st.selectbox(
+                        "Mood", ["Flirty", "Loving", "Dominant", "Submissive", "Playful"]
+                    )
+                    st.session_state.outfit = st.selectbox(
+                        "Outfit", ["Lingerie", "Latex", "Uniform", "Casual", "Nude"]
+                    )
+                    
+                with col2:
+                    st.session_state.motion = st.selectbox(
+                        "Gesture", list(MOTION_EMOJIS.keys()),
+                        format_func=lambda x: f"{MOTION_EMOJIS[x]} {x}"
+                    )
+                    st.session_state.nsfw_level = st.select_slider(
+                        "Intensity", options=NSFW_LEVELS,
+                        value=NSFW_LEVELS[st.session_state.nsfw_level]
+                    )
+                    
+                st.radio("Image Model", list(IMAGE_MODELS.keys()),
+                        key="img_model", horizontal=True)
+                
+            if st.button("🧹 Clear History"):
+                st.session_state.history = []
+                st.rerun()
+                
+    def _render_avatar_panel(self):
+        with st.container():
+            st.markdown("### Your Companion 💖")
+            if st.session_state.current_image:
                 st.markdown(
-                    f'<img class="floating-img" src="data:image/jpeg;base64,{turn["img"]}">',
+                    f'<img class="floating-avatar" src="data:image/jpeg;base64,{st.session_state.current_image}" '
+                    'style="width:100%; max-width:600px; margin:auto;">',
                     unsafe_allow_html=True
                 )
-            st.markdown(f"**Her:** {turn['bot']}")
-
-        # input box
-        user_in = st.text_input("Talk to her…", key="chat_in")
-        if user_in:
-            # append user
-            st.session_state.history.append({"user": user_in, "bot": "", "img": st.session_state.last_avatar})
-            # build system prompt
-            sys_p = (
-                f"Mood:{st.session_state.mood.lower()} "
-                f"Gesture:{st.session_state.motion.lower()} "
-                f"Position:{st.session_state.position.lower()} "
-                f"Outfit:{st.session_state.outfit.lower()} "
-                f"NSFW:{st.session_state.nsfw}/5 "
-                f"User:{user_in} Companion:"
+            else:
+                st.info("Start chatting to see your companion come to life...")
+                
+    def _render_chat(self):
+        with st.container(height=700):
+            for msg in st.session_state.history:
+                self._render_message(msg)
+                
+            user_input = st.chat_input("Type your message...")
+            if user_input:
+                self._process_user_input(user_input)
+                
+    def _render_message(self, msg: Dict):
+        if msg["role"] == "user":
+            st.markdown(
+                f'<div class="user-bubble">👤 {msg["content"]}</div>',
+                unsafe_allow_html=True
             )
-            # stream LLM
-            bot_reply = ""
-            ph = st.empty()
-            for chunk in replicate.stream(DOLPHIN_MODEL, input={"prompt": sys_p}):
-                bot_reply += chunk
-                ph.markdown(f"**Her:** {bot_reply}")
-            # generate new avatar
-            img_prompt = f"{bot_reply}, {st.session_state.outfit.lower()}, {st.session_state.position.lower()}, photorealistic"
-            new_img = gen_avatar(img_prompt)
-            if new_img:
-                st.session_state.last_avatar = new_img
-            # update last turn
-            st.session_state.history[-1].update(bot=bot_reply, img=new_img)
-
-    else:  # Instruct mode
-        instruction = st.text_area("Tell her exactly what to do…", key="instr_in")
-        if st.button("Execute"):
-            # run LLM
-            bot_resp = client.run(DOLPHIN_MODEL, input={"prompt": instruction})
-            st.markdown(f"**Her:** {bot_resp}")
-            # new avatar
-            new_img = gen_avatar(f"{instruction}, photorealistic")
-            if new_img:
-                st.session_state.last_avatar = new_img
+        else:
+            col1, col2 = st.columns([1, 20])
+            with col1:
+                st.image(f"data:image/jpeg;base64,{msg['image']}", width=60)
+            with col2:
                 st.markdown(
-                    f'<img class="floating-img" src="data:image/jpeg;base64,{new_img}">',
+                    f'<div class="bot-bubble">💋 {msg["response"]}</div>',
                     unsafe_allow_html=True
                 )
+                
+    def _process_user_input(self, text: str):
+        with st.status("💭 Processing...", expanded=False) as status:
+            # Generate response
+            status.update(label="💬 Generating response...", state="running")
+            prompt = self._build_prompt(text)
+            response = self.core.generate_response(prompt, st.session_state.history)
+            
+            # Generate image
+            status.update(label="🎨 Creating visualization...", state="running")
+            image_prompt = f"{response}, {st.session_state.outfit}, {st.session_state.mood}"
+            image_b64 = self.core.generate_image(image_prompt, st.session_state.img_model)
+            
+            # Update session state
+            st.session_state.history.append({
+                "role": "user",
+                "content": text,
+                "image": ""
+            })
+            st.session_state.history.append({
+                "role": "bot",
+                "response": response,
+                "image": image_b64
+            })
+            st.session_state.current_image = image_b64
+            st.session_state.image_gallery.append(image_b64)
+            
+            st.rerun()
+            
+    def _build_prompt(self, text: str) -> str:
+        return (
+            f"NSFW Level: {st.session_state.nsfw_level}\n"
+            f"Mood: {st.session_state.mood}\n"
+            f"Gesture: {st.session_state.motion}\n"
+            f"Outfit: {st.session_state.outfit}\n"
+            f"User Input: {text}\n"
+            "Response:"
+        )
+    
+    def _render_quick_actions(self):
+        actions = ["Blowjob", "Titty Fuck", "Handjob", "Lap Dance", "69", "Cowgirl"]
+        st.markdown('<div class="quick-actions">', unsafe_allow_html=True)
+        for action in actions:
+            if st.button(f"🌟 {action}", key=f"qa_{action}"):
+                self._process_quick_action(action)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+    def _process_quick_action(self, action: str):
+        with st.spinner(f"Performing {action}..."):
+            response = self.core.generate_response(action, st.session_state.history)
+            image_b64 = self.core.generate_image(
+                f"{action}, {st.session_state.outfit}", 
+                st.session_state.img_model
+            )
+            
+            st.session_state.history.append({
+                "role": "bot",
+                "response": response,
+                "image": image_b64
+            })
+            st.session_state.current_image = image_b64
+            st.rerun()
+            
+    def run(self):
+        self._render_sidebar()
+        col1, col2 = st.columns([3, 7], gap="medium")
+        
+        with col1:
+            with st.container():
+                self._render_avatar_panel()
+                
+        with col2:
+            self._render_chat()
+            
+        self._render_quick_actions()
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# -------------------- Quick‑Actions Bar --------------------
-st.markdown('<div class="quick-bar">', unsafe_allow_html=True)
-for action in QUICK:
-    if st.button(action, key=f"quick_{action}"):
-        # record action
-        st.session_state.history.append({
-            "user": f"*Action:* {action}",
-            "bot": "",
-            "img": st.session_state.last_avatar
-        })
-        # LLM reaction
-        resp = client.run(DOLPHIN_MODEL, input={"prompt": action})
-        # new pose/avatar
-        prompt_img = f"{action}, {st.session_state.outfit.lower()}, {st.session_state.position.lower()}, photorealistic"
-        updated_img = gen_avatar(prompt_img)
-        if updated_img:
-            st.session_state.last_avatar = updated_img
-        # update history turn
-        st.session_state.history[-1].update(bot=resp, img=updated_img)
-st.markdown('</div>', unsafe_allow_html=True)
+if __name__ == "__main__":
+    if not os.getenv("REPLICATE_API_TOKEN"):
+        st.error("Missing REPLICATE_API_TOKEN in environment variables")
+        st.stop()
+        
+    ui = CompanionUI()
+    ui.run()
