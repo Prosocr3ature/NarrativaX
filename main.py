@@ -14,8 +14,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-# hide Streamlit footer
+# Hide Streamlit footer
 st.markdown(
     "<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;}</style>",
     unsafe_allow_html=True,
@@ -65,21 +64,19 @@ OUTFITS   = ["None", "Lingerie", "Latex", "Uniform", "Casual"]
 
 # -------------------- Session State --------------------
 if "history" not in st.session_state:
-    st.session_state.history = []  # list of dicts {"user":str, "bot":str, "img":b64}
-if "mood" not in st.session_state:
-    st.session_state.mood = MOODS[0]
-if "motion" not in st.session_state:
-    st.session_state.motion = MOTIONS[0]
-if "position" not in st.session_state:
-    st.session_state.position = POSITIONS[0]
-if "outfit" not in st.session_state:
-    st.session_state.outfit = OUTFITS[0]
-if "nsfw_level" not in st.session_state:
-    st.session_state.nsfw_level = 3
-if "image_model" not in st.session_state:
-    st.session_state.image_model = list(IMAGE_MODELS.keys())[0]
+    st.session_state.history = []
+for key, default in {
+    "mood": MOODS[0],
+    "motion": MOTIONS[0],
+    "position": POSITIONS[0],
+    "outfit": OUTFITS[0],
+    "nsfw_level": 3,
+    "image_model": list(IMAGE_MODELS.keys())[0],
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
-# -------------------- Helper Functions --------------------
+# -------------------- Helpers --------------------
 def chat_with_mythomax(prompt: str) -> str:
     try:
         out = client.run(
@@ -114,67 +111,60 @@ def generate_avatar(prompt: str) -> str:
         img = Image.open(BytesIO(requests.get(url).content)).convert("RGB")
         buf = BytesIO(); img.save(buf, format="JPEG", quality=90)
         return base64.b64encode(buf.getvalue()).decode()
-    except Exception as e:
+    except Exception:
         return ""
 
 # -------------------- UI --------------------
 st.title("💖 CompanionX")
 
-# — Controls —
 with st.sidebar:
     st.header("🔧 Settings")
-    st.session_state.mood       = st.selectbox("Mood",     MOODS,     index=MOODS.index(st.session_state.mood))
-    st.session_state.motion     = st.selectbox("Motion",   MOTIONS,   index=MOTIONS.index(st.session_state.motion))
-    st.session_state.position   = st.selectbox("Position", POSITIONS, index=POSITIONS.index(st.session_state.position))
-    st.session_state.outfit     = st.selectbox("Outfit",   OUTFITS,   index=OUTFITS.index(st.session_state.outfit))
-    st.session_state.nsfw_level = st.slider("NSFW Level", 1, 5, st.session_state.nsfw_level)
-    st.session_state.image_model= st.radio("Image Model", list(IMAGE_MODELS.keys()),
-                                          index=list(IMAGE_MODELS.keys()).index(st.session_state.image_model))
+    st.session_state.mood        = st.selectbox("Mood", MOODS, index=MOODS.index(st.session_state.mood))
+    st.session_state.motion      = st.selectbox("Motion", MOTIONS, index=MOTIONS.index(st.session_state.motion))
+    st.session_state.position    = st.selectbox("Position", POSITIONS, index=POSITIONS.index(st.session_state.position))
+    st.session_state.outfit      = st.selectbox("Outfit", OUTFITS, index=OUTFITS.index(st.session_state.outfit))
+    st.session_state.nsfw_level  = st.slider("NSFW Level", 1, 5, st.session_state.nsfw_level)
+    st.session_state.image_model = st.radio("Image Model", list(IMAGE_MODELS.keys()),
+                                           index=list(IMAGE_MODELS.keys()).index(st.session_state.image_model))
 
-# — Display History —
+# Display chat history
 for entry in st.session_state.history:
     with st.chat_message("user"):
         st.markdown(entry["user"])
     with st.chat_message("assistant"):
         if entry["img"]:
-            st.image(f"data:image/jpeg;base64,{entry['img']}", use_column_width=True, caption="Companion")
+            st.image(f"data:image/jpeg;base64,{entry['img']}", use_container_width=True, caption="Companion")
         st.markdown(entry["bot"])
 
-# — Chat Input —
+# New user message
 user_text = st.chat_input("Talk to your companion…")
 if user_text:
-    # 1) Record user
-    st.session_state.history.append({
-        "user": user_text, "bot": "", "img": ""
-    })
+    # Record user message
+    st.session_state.history.append({"user": user_text, "bot": "", "img": ""})
 
-    # 2) Build system prompt
-    sys = (
-        f"You are an intimate virtual companion. Mood: {st.session_state.mood.lower()}. "
+    # Build prompt
+    sys_p = (
+        f"You are an intimate companion. Mood: {st.session_state.mood.lower()}. "
         f"Gesture: {st.session_state.motion.lower()}. Position: {st.session_state.position.lower()}. "
-        f"Outfit: {st.session_state.outfit.lower()}. NSFW level {st.session_state.nsfw_level}/5. "
-        f"Reply explicitly and in‑character."
+        f"Outfit: {st.session_state.outfit.lower()}. NSFW level: {st.session_state.nsfw_level}/5. "
+        "Reply explicitly."
     )
-    convo = sys + "\n"
-    # last 6 exchanges
-    for h in st.session_state.history[-2:]:
-        convo += f"User: {h['user']}\nCompanion:\n"
+    convo = sys_p + "\nUser: " + user_text + "\nCompanion:"
 
-    # 3) Generate text reply
+    # Generate reply
     with st.spinner("Companion is thinking…"):
         bot_reply = chat_with_mythomax(convo)
 
-    # 4) Generate avatar reacting
+    # Generate avatar
     img_prompt = (
         f"{bot_reply}, {st.session_state.mood.lower()} mood, "
         f"{st.session_state.motion.lower()}, {st.session_state.position.lower()} position, "
-        f"{st.session_state.outfit.lower()}, sensual expression, photorealistic"
+        f"{st.session_state.outfit.lower()}, photorealistic"
     )
     with st.spinner("Generating avatar…"):
         img_b64 = generate_avatar(img_prompt)
 
-    # 5) Update last entry
+    # Update last history entry
     st.session_state.history[-1].update({"bot": bot_reply, "img": img_b64})
 
-    # 6) Rerun to display
-    st.experimental_rerun()
+# Streamlit auto‑reruns and shows the updated chat
