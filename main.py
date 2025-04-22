@@ -158,5 +158,3 @@ scene_code = st.text_area("Edit your scene script here:", height=300)
 if st.button("Save Scene"):
     st.session_state.sex_scenes.append(scene_code)
     st.success("Scene saved successfully.")
-
-**Requirements (requirements.txt
