@@ -1,131 +1,180 @@
+import os
+import time
+import base64
 import streamlit as st
 import replicate
-import os
+import requests
+from io import BytesIO
 from PIL import Image
-import base64
-from datetime import datetime
 
 # -------------------- Configuration --------------------
 st.set_page_config(
-    page_title="🍬 Candy AI Companions",
-    page_icon="🍭",
+    page_title="CompanionX",
+    page_icon="💖",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# -------------------- Styles --------------------
-st.markdown("""
-<style>
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #2a0a36 0%, #1a1a2e 100%) !important;
-    }
-    .companion-card {
-        border-radius: 15px;
-        padding: 20px;
-        background: rgba(255,255,255,0.1);
-        margin: 10px;
-        transition: transform 0.2s;
-    }
-    .companion-card:hover {
-        transform: scale(1.02);
-        cursor: pointer;
-    }
-    .header {
-        background: linear-gradient(90deg, #ff6b6b 0%, #ff8e53 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-</style>
-""", unsafe_allow_html=True)
+# hide Streamlit footer
+st.markdown(
+    "<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;}</style>",
+    unsafe_allow_html=True,
+)
 
-# -------------------- API Keys --------------------
+# -------------------- API Setup --------------------
 REPLICATE_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 if not REPLICATE_TOKEN:
     st.error("⚠️ Please set REPLICATE_API_TOKEN in your environment.")
     st.stop()
 client = replicate.Client(api_token=REPLICATE_TOKEN)
 
-# -------------------- Model Config --------------------
+# -------------------- Models --------------------
 LLM_MODEL = "gryphe/mythomax-l2-13b"
 
 IMAGE_MODELS = {
     "Reliberate v3": {
         "id": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
-        "params": {"width": 768, "height": 1152, "guidance_scale": 8.5}
+        "width": 768, "height": 1152, "guidance_scale": 8.5
     },
-    # Add additional models with specific parameters as needed
+    "Unlimited XL": {
+        "id": "asiryan/unlimited-xl:1a98916be7897ab4d9fbc30d2b20d070c237674148b00d344cf03ff103eb7082",
+        "width": 768, "height": 1152, "guidance_scale": 9.0
+    },
+    "Realism XL": {
+        "id": "asiryan/realism-xl:ff26a1f71bc27f43de016f109135183e0e4902d7cdabbcbb177f4f8817112219",
+        "width": 1024, "height": 1024, "guidance_scale": 8.0
+    },
+    "Babes XL": {
+        "id": "asiryan/babes-xl:a07fcbe80652ccf989e8198654740d7d562de85f573196dd624a8a80285da27d",
+        "width": 1024, "height": 1024, "guidance_scale": 9.0
+    },
+    "Deliberate V6": {
+        "id": "asiryan/deliberate-v6:605a9ad23d7580b2762173afa6009b1a0cc00b7475998600ba2c39eda05f533e",
+        "width": 768, "height": 1152, "guidance_scale": 9.0
+    },
+    "PonyNai3": {
+        "id": "delta-lock/ponynai3:ea38949bfddea2db315b598620110edfa76ddaf6313a18e6cbc6a98f496a34e9",
+        "width": 768, "height": 1152, "guidance_scale": 10.0
+    },
 }
 
-MOODS = ["Flirty", "Loving", "Dominant", "Submissive", "Playful"]
-MOTIONS = ["Wink", "Hair Flip", "Lean In", "Smile", "Blush"]
+MOODS     = ["Flirty", "Loving", "Dominant", "Submissive", "Playful"]
+MOTIONS   = ["Wink", "Hair Flip", "Lean In", "Smile", "Blush"]
+POSITIONS = ["None", "Missionary", "Doggy", "Cowgirl", "69", "Standing"]
+OUTFITS   = ["None", "Lingerie", "Latex", "Uniform", "Casual"]
+
+# -------------------- Session State --------------------
+if "history" not in st.session_state:
+    st.session_state.history = []  # list of dicts {"user":str, "bot":str, "img":b64}
+if "mood" not in st.session_state:
+    st.session_state.mood = MOODS[0]
+if "motion" not in st.session_state:
+    st.session_state.motion = MOTIONS[0]
+if "position" not in st.session_state:
+    st.session_state.position = POSITIONS[0]
+if "outfit" not in st.session_state:
+    st.session_state.outfit = OUTFITS[0]
+if "nsfw_level" not in st.session_state:
+    st.session_state.nsfw_level = 3
+if "image_model" not in st.session_state:
+    st.session_state.image_model = list(IMAGE_MODELS.keys())[0]
 
 # -------------------- Helper Functions --------------------
-def generate_response(prompt: str) -> str:
-    """Generate companion response using Replicate"""
+def chat_with_mythomax(prompt: str) -> str:
     try:
-        output = client.run(
+        out = client.run(
             LLM_MODEL,
             input={
                 "prompt": prompt,
-                "temperature": 0.85,
-                "max_new_tokens": 250
+                "temperature": 0.9,
+                "max_new_tokens": 300,
+                "top_p": 0.95,
+                "repetition_penalty": 1.1
             }
         )
-        return output.strip().replace("</s>", "")
+        return out.strip().replace("<s>", "").replace("</s>", "")
     except Exception as e:
-        return "Hmm, let's explore that further... 😏"
+        return f"[LLM Error: {e}]"
 
-def generate_image(prompt: str, model_name: str):
-    """Generate dynamic images based on prompts"""
-    model_info = IMAGE_MODELS[model_name]
+def generate_avatar(prompt: str) -> str:
+    cfg = IMAGE_MODELS[st.session_state.image_model]
     try:
-        image_data = client.run(
-            model_info["id"],
-            input={"prompt": prompt, **model_info["params"]}
+        urls = client.run(
+            cfg["id"],
+            input={
+                "prompt": prompt,
+                "width": cfg["width"],
+                "height": cfg["height"],
+                "num_inference_steps": 50,
+                "guidance_scale": cfg["guidance_scale"],
+                "negative_prompt": "text, watermark, lowres"
+            }
         )
-        img = Image.open(BytesIO(image_data.content)).convert("RGB")
-        buf = BytesIO()
-        img.save(buf, format="JPEG")
+        url = urls[0] if isinstance(urls, list) else urls
+        img = Image.open(BytesIO(requests.get(url).content)).convert("RGB")
+        buf = BytesIO(); img.save(buf, format="JPEG", quality=90)
         return base64.b64encode(buf.getvalue()).decode()
     except Exception as e:
         return ""
 
-# -------------------- Main App --------------------
-def main():
-    st.title("🍭 Candy AI Companions")
-    
-    # Sidebar for mood and model selection
-    with st.sidebar:
-        mood = st.selectbox("Choose the mood of your companion:", MOODS)
-        image_model = st.selectbox("Select image model for generation:", list(IMAGE_MODELS.keys()))
+# -------------------- UI --------------------
+st.title("💖 CompanionX")
 
-    # User input for chat
-    user_input = st.text_input("Type something to your AI companion:")
-    
-    if user_input:
-        # Generate text response from LLM
-        prompt = f"You are a companion in a {mood.lower()} mood. {user_input}"
-        response = generate_response(prompt)
-        
-        # Generate image response
-        image_prompt = f"{response} in a {mood.lower()} mood"
-        image_b64 = generate_image(image_prompt, image_model)
-        
-        if image_b64:
-            st.image(f"data:image/jpeg;base64,{image_b64}", use_column_width=True)
-        st.markdown(f"**AI Companion**: {response}")
-        
-        # Update chat history dynamically
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
-        st.session_state.chat_history.append({"user": user_input, "bot": response, "image": image_b64})
+# — Controls —
+with st.sidebar:
+    st.header("🔧 Settings")
+    st.session_state.mood       = st.selectbox("Mood",     MOODS,     index=MOODS.index(st.session_state.mood))
+    st.session_state.motion     = st.selectbox("Motion",   MOTIONS,   index=MOTIONS.index(st.session_state.motion))
+    st.session_state.position   = st.selectbox("Position", POSITIONS, index=POSITIONS.index(st.session_state.position))
+    st.session_state.outfit     = st.selectbox("Outfit",   OUTFITS,   index=OUTFITS.index(st.session_state.outfit))
+    st.session_state.nsfw_level = st.slider("NSFW Level", 1, 5, st.session_state.nsfw_level)
+    st.session_state.image_model= st.radio("Image Model", list(IMAGE_MODELS.keys()),
+                                          index=list(IMAGE_MODELS.keys()).index(st.session_state.image_model))
 
-        # Display chat history
-        for chat in st.session_state.chat_history:
-            st.markdown(f"**You**: {chat['user']}")
-            st.markdown(f"**AI Companion**: {chat['bot']}")
-            if chat["image"]:
-                st.image(f"data:image/jpeg;base64,{chat['image']}", use_column_width=True)
+# — Display History —
+for entry in st.session_state.history:
+    with st.chat_message("user"):
+        st.markdown(entry["user"])
+    with st.chat_message("assistant"):
+        if entry["img"]:
+            st.image(f"data:image/jpeg;base64,{entry['img']}", use_column_width=True, caption="Companion")
+        st.markdown(entry["bot"])
 
-if __name__ == "__main__":
-    main()
+# — Chat Input —
+user_text = st.chat_input("Talk to your companion…")
+if user_text:
+    # 1) Record user
+    st.session_state.history.append({
+        "user": user_text, "bot": "", "img": ""
+    })
+
+    # 2) Build system prompt
+    sys = (
+        f"You are an intimate virtual companion. Mood: {st.session_state.mood.lower()}. "
+        f"Gesture: {st.session_state.motion.lower()}. Position: {st.session_state.position.lower()}. "
+        f"Outfit: {st.session_state.outfit.lower()}. NSFW level {st.session_state.nsfw_level}/5. "
+        f"Reply explicitly and in‑character."
+    )
+    convo = sys + "\n"
+    # last 6 exchanges
+    for h in st.session_state.history[-2:]:
+        convo += f"User: {h['user']}\nCompanion:\n"
+
+    # 3) Generate text reply
+    with st.spinner("Companion is thinking…"):
+        bot_reply = chat_with_mythomax(convo)
+
+    # 4) Generate avatar reacting
+    img_prompt = (
+        f"{bot_reply}, {st.session_state.mood.lower()} mood, "
+        f"{st.session_state.motion.lower()}, {st.session_state.position.lower()} position, "
+        f"{st.session_state.outfit.lower()}, sensual expression, photorealistic"
+    )
+    with st.spinner("Generating avatar…"):
+        img_b64 = generate_avatar(img_prompt)
+
+    # 5) Update last entry
+    st.session_state.history[-1].update({"bot": bot_reply, "img": img_b64})
+
+    # 6) Rerun to display
+    st.experimental_rerun()
