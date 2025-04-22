@@ -1,232 +1,209 @@
-# main.py - Premium Virtual Companion Experience
-# Enhanced with immersive UI, real-time interactions, and intelligent memory
-
-import os
-import time
-import json
-import requests
 import streamlit as st
+import os
 import replicate
-from PIL import Image
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from io import BytesIO
-from typing import Dict, List
+from PIL import Image
 
-# ========== CORE CONFIGURATION ==========
-LLM_MODEL = "gryphe/mythomax-l2-13b"
-IMG_MODELS = {
-    "Cinematic": "lucataco/realistic-vision-v5.1",
-    "Anime": "stability-ai/sdxl"
-}
+# Set up page configuration for fullscreen view and hide sidebar menu
+st.set_page_config(page_title="AI Companion", page_icon="🌟", layout="wide", initial_sidebar_state="collapsed")
+hide_streamlit_style = """<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;}</style>"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-MOOD_INTENSITIES = {
-    "Playful": 1.2,
-    "Dominant": 1.5,
-    "Submissive": 0.8,
-    "Sensual": 1.4,
-    "Romantic": 1.1
-}
+# Check for Replicate API token
+if "REPLICATE_API_TOKEN" not in os.environ:
+    st.error("Missing Replicate API token. Please set the REPLICATE_API_TOKEN environment variable.")
+    st.stop()
 
-GESTURES = ["Smirk", "Hair Flip", "Lip Bite", "Sultry Gaze", "Neck Touch"]
-
-# ========== STATE MANAGEMENT ==========
-class CompanionState:
-    def __init__(self):
-        self.companions = {}
-        self.active_companion = None
-        self.chat_history = []
-        self.memory_context = []
-        self.current_mood = "Playful"
-        self.nsfw_level = 3
-        
-    def add_companion(self, name, bio, style):
-        self.companions[name] = {
-            "bio": bio,
-            "style": style,
-            "images": [],
-            "memory": [],
-            "arousal": 0.5
-        }
-
-def initialize_state():
-    if "state" not in st.session_state:
-        st.session_state.state = CompanionState()
-
-initialize_state()
-
-# ========== AI INTEGRATION ==========
-class AIIntegrator:
-    def __init__(self):
-        self.chat_headers = {
-            "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
-            "Content-Type": "application/json"
-        }
-        
-    def generate_response(self, prompt, mood, nsfw_level):
-        try:
-            enhanced_prompt = f"[Mood: {mood}] [NSFW Level: {nsfw_level}/5] {prompt}"
-            payload = {
-                "model": LLM_MODEL,
-                "messages": [{"role": "user", "content": enhanced_prompt}],
-                "max_tokens": 1200,
-                "temperature": MOOD_INTENSITIES.get(mood, 1.0),
-                "top_p": 0.9 + (nsfw_level * 0.02)
-            }
-            
-            response = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers=self.chat_headers,
-                json=payload,
-                timeout=30
-            )
-            return response.json()["choices"][0]["message"]["content"]
-        
-        except Exception as e:
-            return f"💔 Connection lost... Please touch me again ({str(e)})"
-
-    def generate_image(self, prompt, style):
-        try:
-            model = IMG_MODELS[style]
-            response = replicate.run(model, input={
-                "prompt": f"8K cinematic, {prompt}",
-                "width": 1024,
-                "height": 1368,
-                "num_outputs": 1
-            })
-            return Image.open(BytesIO(requests.get(response[0]).content))
-        except:
-            return None
-
-# ========== IMMERSIVE UI COMPONENTS ==========
-def companion_avatar(companion):
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        if companion["images"]:
-            st.image(companion["images"][-1], use_column_width=True)
-        else:
-            st.image("https://i.ibb.co/3WX5W0T/default-avatar.png", use_column_width=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div class="companion-header">
-            <h1>{list(st.session_state.state.companions.keys())[0]}</h1>
-            <div class="mood-indicator">{st.session_state.state.current_mood}</div>
-            <div class="nsfw-level">Intensity Level: {st.session_state.state.nsfw_level}/5</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-def chat_message(role, content, image=None):
-    if role == "user":
-        st.markdown(f"""
-        <div class="user-message">
-            <div class="message-bubble">{content}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            if image:
-                st.image(image, use_column_width=True)
-        with col2:
-            st.markdown(f"""
-            <div class="companion-message">
-                <div class="message-bubble">{content}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-# ========== MAIN INTERFACE ==========
-def main():
-    st.set_page_config(
-        page_title="Elysium Companions",
-        page_icon="💞",
-        layout="centered",
-        initial_sidebar_state="collapsed"
+# Load MythoMax LLM (13B) model and tokenizer
+@st.cache_resource
+def load_llm():
+    tokenizer = AutoTokenizer.from_pretrained("Gryphe/MythoMax-L2-13b", use_fast=False)
+    model = AutoModelForCausalLM.from_pretrained(
+        "Gryphe/MythoMax-L2-13b", 
+        device_map="auto", 
+        load_in_8bit=True,   # 8-bit quantization for efficiency
+        torch_dtype=torch.float16
     )
-    
-    st.markdown("""
-    <style>
-    .companion-header { border-bottom: 2px solid #ff4b4b; padding: 1rem; }
-    .message-bubble {
-        padding: 1.2rem;
-        border-radius: 1.5rem;
-        margin: 0.5rem 0;
-        background: rgba(255, 75, 75, 0.1);
+    return tokenizer, model
+
+tokenizer, model = load_llm()
+
+# Define companion profiles with persona and appearance
+companions_data = {
+    "Luna": {
+        "persona": "a flirty and playful girlfriend who teases affectionately.",
+        "appearance": "a 22-year-old woman with long brown hair and a mischievous smile"
+    },
+    "Reina": {
+        "persona": "a confident, dominant partner who likes to take control.",
+        "appearance": "a 30-year-old woman with black hair and piercing eyes, often wearing leather."
+    },
+    "Lily": {
+        "persona": "a shy, submissive partner who is eager to please.",
+        "appearance": "a 19-year-old woman with short blonde hair and a bashful smile"
     }
-    .user-message { text-align: right; }
-    .companion-message { text-align: left; }
-    </style>
-    """, unsafe_allow_html=True)
+}
 
-    ai = AIIntegrator()
-    state = st.session_state.state
+# Initialize session state for chat logs if not already
+if 'chat_logs' not in st.session_state:
+    st.session_state['chat_logs'] = {}
 
-    # Companion Creation
-    if not state.companions:
-        with st.container():
-            st.title("💋 Create Your Perfect Companion")
-            name = st.text_input("Her Name")
-            bio = st.text_area("Personality Profile", height=150)
-            style = st.selectbox("Visual Style", list(IMG_MODELS.keys()))
-            
-            if st.button("Bring to Life"):
-                if name and bio:
-                    state.add_companion(name, bio, style)
-                    state.active_companion = name
-                    st.rerun()
-            return
+# Create two tabs: Chat and Sex Scene Generator
+tab_chat, tab_scene = st.tabs(["Chat", "Sex Scene Generator"])
 
-    # Main Chat Interface
-    companion = state.companions[state.active_companion]
-    
-    # Header Section
-    companion_avatar(companion)
-    
-    # Chat History
-    for idx, entry in enumerate(state.chat_history):
-        if entry["type"] == "user":
-            chat_message("user", entry["content"])
-        else:
-            chat_message("companion", entry["content"], entry.get("image"))
-
-    # Interaction Controls
-    with st.form("chat_form", clear_on_submit=True):
-        col1, col2 = st.columns([3, 1])
+with tab_chat:
+    st.header("💬 Live Companion Chat")
+    # Select one or multiple companions to chat with
+    selected_names = st.multiselect(
+        "Choose your companion(s):", 
+        options=list(companions_data.keys()), 
+        default=[list(companions_data.keys())[0]]
+    )
+    if len(selected_names) == 0:
+        st.warning("Please select at least one companion to begin chatting.")
+    else:
+        # Determine session key for this conversation (single or group)
+        conv_key = ", ".join(sorted(selected_names))
+        if conv_key not in st.session_state['chat_logs']:
+            st.session_state['chat_logs'][conv_key] = []  # initialize empty chat history for this combination
+        
+        # Display existing conversation from session state
+        for msg in st.session_state['chat_logs'][conv_key]:
+            if msg['speaker'] == 'User':
+                with st.chat_message("user"):
+                    st.markdown(msg['text'])
+            else:
+                # Assistant (companion) message
+                with st.chat_message("assistant"):
+                    img = Image.open(BytesIO(msg['image_bytes']))
+                    st.image(img, caption=msg['speaker'])
+                    st.markdown(msg['text'])
+        
+        # Controls for mood, intensity, gesture
+        col1, col2, col3 = st.columns([1,1,1])
         with col1:
-            user_input = st.text_input("Whisper to your companion...", key="input")
+            mood = st.selectbox("Mood:", ["Flirty", "Submissive", "Dominant"], index=0)
         with col2:
-            submitted = st.form_submit_button("Send ➤")
-
-        with st.expander("Advanced Settings"):
-            state.current_mood = st.selectbox("Mood Atmosphere", list(MOOD_INTENSITIES.keys()))
-            selected_gesture = st.selectbox("Body Language", GESTURES)
-            state.nsfw_level = st.slider("Intensity Level", 1, 5, 3)
-
-    if submitted and user_input:
-        # Store user message
-        state.chat_history.append({
-            "type": "user",
-            "content": user_input,
-            "timestamp": time.time()
-        })
-
-        # Generate companion response
-        prompt = f"{companion['bio']} Current context: {selected_gesture}. User says: {user_input}"
-        response = ai.generate_response(prompt, state.current_mood, state.nsfw_level)
+            intensity = st.slider("Intensity (NSFW):", 1, 5, value=3)
+        with col3:
+            gesture = st.selectbox("Motion/Gesture:", ["Winking", "Touching chest", "Straddling"], index=0)
         
-        # Generate response image
-        image_prompt = f"{state.active_companion}, {state.current_mood} mood, {selected_gesture}, {companion['bio']}"
-        response_image = ai.generate_image(image_prompt, companion["style"])
-        
-        # Store companion response
-        state.chat_history.append({
-            "type": "companion",
-            "content": response,
-            "image": response_image,
-            "mood": state.current_mood,
-            "gesture": selected_gesture,
-            "timestamp": time.time()
-        })
-        
-        st.rerun()
+        # Chat input box (for user message)
+        user_input = st.chat_input("Type a message and press Enter...")
+        if user_input:
+            # Append user message to session history and display it
+            st.session_state['chat_logs'][conv_key].append({"speaker": "User", "text": user_input})
+            with st.chat_message("user"):
+                st.markdown(user_input)
+            
+            # Prepare conversation history for LLM prompt
+            history_text = "".join([f"{entry['speaker']}: {entry['text']}\n" for entry in st.session_state['chat_logs'][conv_key]])
+            
+            # Generate a response for each selected companion
+            for name in selected_names:
+                persona = companions_data[name]['persona']
+                appearance = companions_data[name]['appearance']
+                # Construct the LLM prompt using Alpaca-style format
+                instruction = (
+                    f"{name} is {persona} Appearance: {appearance} "
+                    f"{name} currently feels {mood.lower()} and responds in a {mood.lower()} manner. "
+                    f"The reply should have intensity {intensity} (1=mild,5=explicit) and subtly include the gesture '{gesture.lower()}'. "
+                    f"Given the conversation so far, write {name}'s next reply."
+                )
+                prompt = f"### Instruction:\n{instruction}\n### Input:\n{history_text}\n### Response:"
+                
+                # Generate text reply with the LLM
+                with st.spinner(f"{name} is replying..."):
+                    inputs = tokenizer(prompt, return_tensors='pt')
+                    inputs = inputs.to(model.device)
+                    output_ids = model.generate(
+                        **inputs, max_new_tokens=200, do_sample=True, 
+                        temperature=0.8, top_p=0.95
+                    )
+                    reply_text = tokenizer.decode(
+                        output_ids[0][inputs['input_ids'].shape[1]:], 
+                        skip_special_tokens=True
+                    )
+                reply_text = reply_text.strip()
+                if reply_text.startswith(name + ':'):
+                    reply_text = reply_text[len(name)+1:].strip()
+                
+                # Create an image prompt combining appearance, gesture, mood, and intensity cues
+                style = "highly explicit" if intensity >= 5 else ("erotic" if intensity >= 4 else ("sensual" if intensity >= 3 else "attractive"))
+                img_prompt = f"{appearance}, {gesture.lower()}, {mood.lower()} expression, {style}"
+                if intensity <= 2:
+                    img_prompt += ", fully clothed"
+                else:
+                    img_prompt += ", nude" if intensity >= 4 else ", lingerie"
+                img_prompt += ", photo real, extremely detailed"
+                negative_prompt = "bad quality, blurry, deformed, extra limbs, disfigured"
+                
+                # Generate companion image via Replicate [oai_citation_attribution:1‡replicate.com](https://replicate.com/docs/get-started/python#:~:text=output%20%3D%20replicate.run%28%20%22black,2%7D)
+                with st.spinner(f"Generating {name}'s image..."):
+                    output = replicate.run(
+                        "asiryan/reliberate-v3", 
+                        input={"prompt": img_prompt, "negative_prompt": negative_prompt, "num_outputs": 1}
+                    )
+                    image_bytes = output[0].read()
+                
+                # Display the assistant's response (image + text)
+                with st.chat_message("assistant"):
+                    st.image(Image.open(BytesIO(image_bytes)), caption=name)
+                    st.markdown(reply_text)
+                
+                # Save companion's response in chat history
+                st.session_state['chat_logs'][conv_key].append({
+                    "speaker": name,
+                    "text": reply_text,
+                    "image_bytes": image_bytes
+                })
 
-if __name__ == "__main__":
-    main()
+with tab_scene:
+    st.header("📖 Sex Scene Generator")
+    st.write("Enter a scene description and generate a vivid erotic story with images.")
+    scene_seed = st.text_area("Scene description:", placeholder="A romantic evening by the fireplace...")
+    scene_intensity = st.slider("Scene Intensity (NSFW):", 1, 5, value=5, key="scene_intensity")
+    image_count = st.slider("Images to generate:", 1, 3, value=1, key="scene_img_count")
+    if st.button("Generate Scene"):
+        if scene_seed.strip() == "":
+            st.error("Please enter a description for the scene.")
+        else:
+            # Generate scene text using the LLM
+            instruction = (
+                f"Write a detailed erotic scene based on the following description. "
+                f"The scene's content has intensity {scene_intensity} (1=mild,5=explicit). "
+                f"Description: {scene_seed}"
+            )
+            prompt = f"### Instruction:\n{instruction}\n### Response:"
+            with st.spinner("Writing the scene..."):
+                inputs = tokenizer(prompt, return_tensors='pt')
+                inputs = inputs.to(model.device)
+                output_ids = model.generate(
+                    **inputs, max_new_tokens=500, do_sample=True, 
+                    temperature=0.7, top_p=0.9
+                )
+                scene_text = tokenizer.decode(
+                    output_ids[0][inputs['input_ids'].shape[1]:], 
+                    skip_special_tokens=True
+                )
+            st.markdown(scene_text)
+            # Generate images for the scene
+            img_prompt_scene = scene_seed
+            if scene_intensity >= 5:
+                img_prompt_scene += ", extremely explicit"
+            elif scene_intensity >= 3:
+                img_prompt_scene += ", erotic"
+            else:
+                img_prompt_scene += ", romantic"
+            img_prompt_scene += ", photo real, detailed"
+            negative_prompt = "bad quality, blurry, deformed, extra limbs, disfigured"
+            with st.spinner("Generating images..."):
+                output = replicate.run(
+                    "asiryan/reliberate-v3", 
+                    input={"prompt": img_prompt_scene, "negative_prompt": negative_prompt, "num_outputs": image_count}
+                )
+                images = [Image.open(BytesIO(file.read())) for file in output]
+            for img in images:
+                st.image(img)
