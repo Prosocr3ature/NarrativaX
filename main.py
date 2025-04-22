@@ -221,10 +221,3 @@ else:
         st.warning("Select or create a companion")
     else:
         st.info("Create your first companion →")
-    
-    # Updated image URL with placeholder
-    st.image(
-        "https://cdn.pixabay.com/photo/2023/08/25/12/04/ai-generated-8212936_1280.jpg",
-        caption="Your companion awaits",
-        use_container_width=True  # Fixed deprecated parameter
-    )
