@@ -1,3 +1,5 @@
+Här är hela main.py med allt samlat:
+
 import os
 import base64
 import requests
@@ -5,43 +7,32 @@ import streamlit as st
 from io import BytesIO
 from PIL import Image
 import replicate
-from typing import Dict, List, Tuple, Union, Optional
+from typing import Dict, List, Tuple, Union
 
 # ==================== KONSTANTER & KONFIGURATION ====================
-# Förförbättrad Jasmine‐beskrivning som standardvärde i appearance
 JASMINE_DESC = (
     "Princess Jasmine from Aladdin with huge round breasts, "
     "a massive ass, a tiny waist, thick thighs, wearing blue fishnet stockings, "
     "no underwear, and nipple piercings"
 )
 
-DEFAULT_MODEL = "mikeei/dolphin-2.9-llama3-70b-gguf:" \
+DEFAULT_MODEL = (
+    "mikeei/dolphin-2.9-llama3-70b-gguf:"
     "7cd1882cb3ea90756d09decf4bc8a259353354703f8f385ce588b71f7946f0aa"
+)
 
 IMAGE_MODELS: Dict[str, Dict] = {
     "Unrestricted XL": {
         "id": "asiryan/unlimited-xl:1a98916be7897ab4d9fbc30d2b20d070c237674148b00d344cf03ff103eb7082",
-        "width": 768, "height": 1152, "guidance": 9.0,
-        "output_type": "url"
+        "width": 768, "height": 1152, "guidance": 9.0
     },
     "Hardcore Edition": {
         "id": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
-        "width": 768, "height": 1152, "guidance": 8.5,
-        "output_type": "url"
+        "width": 768, "height": 1152, "guidance": 8.5
     },
     "Porn Diffusion": {
         "id": "delta-lock/ponynai3:ea38949bfddea2db315b598620110edfa76ddaf6313a18e6cbc6a98f496a34e9",
-        "width": 768, "height": 1152, "guidance": 10.0,
-        "output_type": "url"
-    },
-    "Pornographic": {
-        "id": "tencentarc/photomaker:ddfc2b08d209f9fa8c1eca692712918bd449f695dabb4a958da31802a9570fe4",
-        "width": 1024, "height": 1536, "guidance": 10.0,
-        "output_type": "url"
-    },
-    "Flux 1.1 Pro": {
-        "id": "black-forest-labs/flux-1.1-pro",
-        "output_type": "binary"
+        "width": 768, "height": 1152, "guidance": 10.0
     }
 }
 
@@ -60,7 +51,7 @@ class NSFWCompanionEngine:
     def __init__(self):
         token = os.getenv("REPLICATE_API_TOKEN")
         if not token:
-            raise EnvironmentError("REPLICATE_API_TOKEN not set")
+            raise EnvironmentError("REPLICATE_API_TOKEN inte satt")
         self.client = replicate.Client(api_token=token)
 
     def generate_image(
@@ -73,50 +64,35 @@ class NSFWCompanionEngine:
         cfg = IMAGE_MODELS[model_name]
         model_id = cfg["id"]
 
-        # Bygg den explicita prompten
         full_prompt = (
             f"{appearance}, ULTRA-EXPLICIT, UNCENSORED, {', '.join(actions)}, "
-            f"{prompt}, 8k RAW photo, intricate details, perfect anatomy, "
-            "vaginal penetration, explicit nudity, highly detailed skin texture"
+            "photorealistic, hyper-realistic lighting, studio lighting, "
+            "8k RAW, sharp focus, realistic skin texture, intricate details, "
+            "perfect anatomy, vaginal penetration, explicit nudity"
         )
 
-        # Sätt upp payload beroende på typ
-        if cfg["output_type"] == "binary":
-            payload = {
-                "prompt": full_prompt,
-                "prompt_upsampling": True,
-                "safety_checker": False
-            }
-        else:
-            guidance = min(cfg.get("guidance", 10.0), 10.0)
-            payload = {
-                "prompt": full_prompt,
-                "width": cfg["width"],
-                "height": cfg["height"],
-                "num_inference_steps": 45,
-                "guidance_scale": guidance,
-                "negative_prompt": "censored, blurry, cartoon, text, watermark, clothes",
-                "safety_checker": False
-            }
+        guidance = min(cfg["guidance"], 10.0)
+        payload = {
+            "prompt": full_prompt,
+            "width": cfg["width"],
+            "height": cfg["height"],
+            "num_inference_steps": 60,
+            "guidance_scale": guidance,
+            "negative_prompt": (
+                "deformed, mutated, disfigured, bad anatomy, lowres, blurry, "
+                "cartoonish, text, watermark, oversaturated, unrealistic"
+            ),
+            "safety_checker": False
+        }
 
         try:
             result = self.client.run(model_id, input=payload)
         except Exception as e:
             return "", f"⚠️ Fel vid generering: {e}"
 
-        # Hantera binary vs URL-output
-        if cfg["output_type"] == "binary":
-            if hasattr(result, "read"):
-                img_bytes = result.read()
-            elif isinstance(result, (bytes, bytearray)):
-                img_bytes = result
-            else:
-                return "", "⚠️ Oväntat binärt format"
-            return self._to_base64(img_bytes), ""
-        else:
-            if isinstance(result, list) and result:
-                return self._fetch_and_encode(result[0]), ""
-            return "", "⚠️ Oväntat URL-format"
+        if isinstance(result, list) and result:
+            return self._fetch_and_encode(result[0]), ""
+        return "", "⚠️ Oväntat output-format"
 
     def _fetch_and_encode(self, url: str) -> str:
         resp = requests.get(url, timeout=25)
@@ -159,10 +135,10 @@ class NSFWCompanionInterface:
         )
         st.markdown("""
         <style>
-            .main {background: #1a1a1a;}
-            .sidebar .block-container {background: #2b2b2b;}
-            .stButton>button {background: #ff4b4b!important;}
-            .stTextArea textarea {background: #333!important;}
+          .main {background: #1a1a1a;}
+          .sidebar .block-container {background: #2b2b2b;}
+          .stButton>button {background: #ff4b4b!important;}
+          .stTextArea textarea {background: #333!important;}
         </style>
         """, unsafe_allow_html=True)
 
@@ -230,8 +206,6 @@ if __name__ == "__main__":
     try:
         NSFWCompanionInterface().run()
     except EnvironmentError as e:
-        st.error(str(e))
-        st.stop()
+        st.error(str(e)); st.stop()
     except Exception as e:
-        st.error(f"Fatal Error: {e}")
-        st.stop()
+        st.error(f"Fatal Error: {e}"); st.stop()
