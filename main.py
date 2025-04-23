@@ -154,7 +154,7 @@ class NSFWCompanionInterface:
 
     def _init_state(self):
         defaults = {
-            "appearance": "22yo Princess Jasmine, huge round tits, massive ass, tiny waist, thick thighs",
+            "appearance": "Princess Jasmine from Alladin, huge round tits, massive ass, tiny waist, thick thighs, blue fishnet stockings, no underwear, nipple piercings",
             "positions": [],
             "oral": [],
             "custom_actions": "",
