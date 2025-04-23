@@ -1,5 +1,3 @@
-#Här är hela main.py med allt samlat:
-
 import os
 import base64
 import requests
