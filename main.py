@@ -5,10 +5,45 @@ import streamlit as st
 from io import BytesIO
 from PIL import Image
 import replicate
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, List, Tuple, Union, Optional
 
-# ==================== CONSTANTS & CONFIGURATION ====================
-DEFAULT_MODEL = "mikeei/dolphin-2.9-llama3-70b-gguf:7cd1882cb3ea90756d09decf4bc8a259353354703f8f385ce588b71f7946f0aa"
+# ==================== KONSTANTER & KONFIGURATION ====================
+# Förförbättrad Jasmine‐beskrivning som standardvärde i appearance
+JASMINE_DESC = (
+    "Princess Jasmine from Aladdin with huge round breasts, "
+    "a massive ass, a tiny waist, thick thighs, wearing blue fishnet stockings, "
+    "no underwear, and nipple piercings"
+)
+
+DEFAULT_MODEL = "mikeei/dolphin-2.9-llama3-70b-gguf:" \
+    "7cd1882cb3ea90756d09decf4bc8a259353354703f8f385ce588b71f7946f0aa"
+
+IMAGE_MODELS: Dict[str, Dict] = {
+    "Unrestricted XL": {
+        "id": "asiryan/unlimited-xl:1a98916be7897ab4d9fbc30d2b20d070c237674148b00d344cf03ff103eb7082",
+        "width": 768, "height": 1152, "guidance": 9.0,
+        "output_type": "url"
+    },
+    "Hardcore Edition": {
+        "id": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
+        "width": 768, "height": 1152, "guidance": 8.5,
+        "output_type": "url"
+    },
+    "Porn Diffusion": {
+        "id": "delta-lock/ponynai3:ea38949bfddea2db315b598620110edfa76ddaf6313a18e6cbc6a98f496a34e9",
+        "width": 768, "height": 1152, "guidance": 10.0,
+        "output_type": "url"
+    },
+    "Pornographic": {
+        "id": "tencentarc/photomaker:ddfc2b08d209f9fa8c1eca692712918bd449f695dabb4a958da31802a9570fe4",
+        "width": 1024, "height": 1536, "guidance": 10.0,
+        "output_type": "url"
+    },
+    "Flux 1.1 Pro": {
+        "id": "black-forest-labs/flux-1.1-pro",
+        "output_type": "binary"
+    }
+}
 
 SEXUAL_POSITIONS = [
     "Doggystyle", "Missionary", "Cowgirl", "Standing", "Kneeling",
@@ -20,47 +55,7 @@ ORAL_ACTIONS = [
     "Cum on Face", "Tit Fuck", "Footjob", "Handjob"
 ]
 
-IMAGE_MODELS = {
-    "Unrestricted XL": {
-        "id": "asiryan/unlimited-xl:1a98916be7897ab4d9fbc30d2b20d070c237674148b00d344cf03ff103eb7082",
-        "width": 768,
-        "height": 1152,
-        "guidance": 9.0,
-        "requires_image": False,
-        "output_type": "url"
-    },
-    "Hardcore Edition": {
-        "id": "asiryan/reliberate-v3:d70438fcb9bb7adb8d6e59cf236f754be0b77625e984b8595d1af02cdf034b29",
-        "width": 768,
-        "height": 1152,
-        "guidance": 8.5,
-        "requires_image": False,
-        "output_type": "url"
-    },
-    "Porn Diffusion": {
-        "id": "delta-lock/ponynai3:ea38949bfddea2db315b598620110edfa76ddaf6313a18e6cbc6a98f496a34e9",
-        "width": 768,
-        "height": 1152,
-        "guidance": 10.0,
-        "requires_image": False,
-        "output_type": "url"
-    },
-    "Pornographic": {
-        "id": "tencentarc/photomaker:ddfc2b08d209f9fa8c1eca692712918bd449f695dabb4a958da31802a9570fe4",
-        "width": 1024,
-        "height": 1536,
-        "guidance": 10.0,          # clamp to model max
-        "requires_image": True,
-        "output_type": "url"
-    },
-    "Flux 1.1 Pro": {
-        "id": "black-forest-labs/flux-1.1-pro",
-        "requires_image": False,
-        "output_type": "binary"
-    }
-}
-
-# ==================== CORE FUNCTIONALITY ====================
+# ==================== KÄRNFUNKTIONALITET ====================
 class NSFWCompanionEngine:
     def __init__(self):
         token = os.getenv("REPLICATE_API_TOKEN")
@@ -73,34 +68,27 @@ class NSFWCompanionEngine:
         prompt: str,
         model_name: str,
         appearance: str,
-        actions: List[str],
-        input_image: Optional[BytesIO] = None
+        actions: List[str]
     ) -> Tuple[str, str]:
         cfg = IMAGE_MODELS[model_name]
         model_id = cfg["id"]
 
-        # require base image if needed
-        if cfg.get("requires_image") and input_image is None:
-            return "", "⚠️ Error: This model requires a base image. Please upload one."
-
-        # unified explicit prompt
+        # Bygg den explicita prompten
         full_prompt = (
-            f"ULTRA-EXPLICIT, UNCENSORED, {', '.join(actions)}, "
-            f"{appearance}, {prompt}, 8k RAW photo, intricate details, "
-            "perfect anatomy, vaginal penetration, explicit nudity, "
-            "highly detailed skin texture"
+            f"{appearance}, ULTRA-EXPLICIT, UNCENSORED, {', '.join(actions)}, "
+            f"{prompt}, 8k RAW photo, intricate details, perfect anatomy, "
+            "vaginal penetration, explicit nudity, highly detailed skin texture"
         )
 
-        # build payload
+        # Sätt upp payload beroende på typ
         if cfg["output_type"] == "binary":
-            # Flux 1.1 Pro now driven by our full_prompt, NSFW allowed
             payload = {
                 "prompt": full_prompt,
                 "prompt_upsampling": True,
                 "safety_checker": False
             }
         else:
-            guidance = min(cfg["guidance"], 10.0)
+            guidance = min(cfg.get("guidance", 10.0), 10.0)
             payload = {
                 "prompt": full_prompt,
                 "width": cfg["width"],
@@ -110,27 +98,25 @@ class NSFWCompanionEngine:
                 "negative_prompt": "censored, blurry, cartoon, text, watermark, clothes",
                 "safety_checker": False
             }
-            if cfg.get("requires_image"):
-                payload["input_image"] = input_image
 
         try:
             result = self.client.run(model_id, input=payload)
         except Exception as e:
-            return "", f"⚠️ Error generating image: {e}"
+            return "", f"⚠️ Fel vid generering: {e}"
 
-        # handle binary vs URL outputs
+        # Hantera binary vs URL-output
         if cfg["output_type"] == "binary":
             if hasattr(result, "read"):
                 img_bytes = result.read()
             elif isinstance(result, (bytes, bytearray)):
                 img_bytes = result
             else:
-                return "", "⚠️ Error: Unexpected binary output format"
+                return "", "⚠️ Oväntat binärt format"
             return self._to_base64(img_bytes), ""
         else:
             if isinstance(result, list) and result:
                 return self._fetch_and_encode(result[0]), ""
-            return "", "⚠️ Error: Unexpected URL output format"
+            return "", "⚠️ Oväntat URL-format"
 
     def _fetch_and_encode(self, url: str) -> str:
         resp = requests.get(url, timeout=25)
@@ -144,8 +130,7 @@ class NSFWCompanionEngine:
         img.save(buf, format="WEBP", quality=100)
         return "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode()
 
-
-# ==================== USER INTERFACE ====================
+# ==================== ANVÄNDARGRÄNSSNITT ====================
 class NSFWCompanionInterface:
     def __init__(self):
         self.engine = NSFWCompanionEngine()
@@ -154,14 +139,13 @@ class NSFWCompanionInterface:
 
     def _init_state(self):
         defaults = {
-            "appearance": "Princess Jasmine from Alladin, huge round tits, massive ass, tiny waist, thick thighs, blue fishnet stockings, no underwear, nipple piercings",
+            "appearance": JASMINE_DESC,
             "positions": [],
             "oral": [],
             "custom_actions": "",
             "current_image": "",
             "processing": False,
-            "model": "Unrestricted XL",
-            "input_image_upload": None
+            "model": "Unrestricted XL"
         }
         for k, v in defaults.items():
             st.session_state.setdefault(k, v)
@@ -193,17 +177,13 @@ class NSFWCompanionInterface:
 
     def _appearance_controls(self):
         with st.sidebar.expander("👙 BODY CUSTOMIZER", expanded=True):
-            st.text_area("Physical Description", key="appearance", height=200,
-                         value=st.session_state.appearance)
             st.selectbox("Model Version", list(IMAGE_MODELS.keys()), key="model")
-
-            cfg = IMAGE_MODELS[st.session_state.model]
-            if cfg.get("requires_image"):
-                up = st.file_uploader("Upload Base Image",
-                                      type=["png", "jpg", "jpeg"],
-                                      key="input_image_upload")
-                if up:
-                    st.session_state.input_image_upload = BytesIO(up.read())
+            st.text_area(
+                "Physical Description",
+                key="appearance",
+                height=200,
+                value=st.session_state.appearance
+            )
 
     def _generate(self):
         st.session_state.processing = True
@@ -217,8 +197,7 @@ class NSFWCompanionInterface:
                 prompt=", ".join(actions),
                 model_name=st.session_state.model,
                 appearance=st.session_state.appearance,
-                actions=actions,
-                input_image=st.session_state.input_image_upload
+                actions=actions
             )
         st.session_state.processing = False
 
@@ -226,17 +205,16 @@ class NSFWCompanionInterface:
             st.error(err)
         else:
             st.session_state.current_image = img_b64
-            st.experimental_rerun()
 
     def _render_display(self):
-        c1, c2 = st.columns([1, 2])
-        with c1:
+        col1, col2 = st.columns([1, 2])
+        with col1:
             st.markdown("## Live Preview")
             if st.session_state.current_image:
                 st.image(st.session_state.current_image, use_column_width=True)
             else:
                 st.info("Configure settings and generate content")
-        with c2:
+        with col2:
             with st.expander("📝 SCENE DESIGNER", expanded=True):
                 st.write("Combine positions & actions for complex scenes")
                 if st.button("💦 NEW VARIATION"):
@@ -247,12 +225,13 @@ class NSFWCompanionInterface:
         self._appearance_controls()
         self._render_display()
 
-
-# ==================== APPLICATION ENTRYPOINT ====================
+# ==================== APPLIKATIONENS ENTRYPOINT ====================
 if __name__ == "__main__":
     try:
         NSFWCompanionInterface().run()
     except EnvironmentError as e:
-        st.error(str(e)); st.stop()
+        st.error(str(e))
+        st.stop()
     except Exception as e:
-        st.error(f"Fatal Error: {e}"); st.stop()
+        st.error(f"Fatal Error: {e}")
+        st.stop()
