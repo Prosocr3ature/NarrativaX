@@ -9,7 +9,6 @@ from typing import Dict, List, Tuple, Optional, Union
 
 # ==================== CONSTANTS & CONFIGURATION ====================
 DEFAULT_MODEL = "mikeei/dolphin-2.9-llama3-70b-gguf:7cd1882cb3ea90756d09decf4bc8a259353354703f8f385ce588b71f7946f0aa"
-NSFW_LEVELS = ["Mild", "Moderate", "Explicit", "Hardcore", "Unrestricted"]
 
 SEXUAL_POSITIONS = [
     "Doggystyle", "Missionary", "Cowgirl", "Standing", "Kneeling",
@@ -27,7 +26,6 @@ IMAGE_MODELS = {
         "width": 768,
         "height": 1152,
         "guidance": 9.0,
-        "styles": ["NSFW", "Explicit"],
         "requires_image": False,
         "output_type": "url"
     },
@@ -36,7 +34,6 @@ IMAGE_MODELS = {
         "width": 768,
         "height": 1152,
         "guidance": 8.5,
-        "styles": ["Hardcore"],
         "requires_image": False,
         "output_type": "url"
     },
@@ -45,7 +42,6 @@ IMAGE_MODELS = {
         "width": 768,
         "height": 1152,
         "guidance": 10.0,
-        "styles": ["Hentai"],
         "requires_image": False,
         "output_type": "url"
     },
@@ -53,15 +49,12 @@ IMAGE_MODELS = {
         "id": "tencentarc/photomaker:ddfc2b08d209f9fa8c1eca692712918bd449f695dabb4a958da31802a9570fe4",
         "width": 1024,
         "height": 1536,
-        "guidance": 10.0,
-        "styles": ["Unrestricted", "Explicit", "Hardcore", "NSFW"],
+        "guidance": 10.0,          # clamp to model max
         "requires_image": True,
         "output_type": "url"
     },
     "Flux 1.1 Pro": {
         "id": "black-forest-labs/flux-1.1-pro",
-        # we’ll now drive Flux with the same hardcore prompt
-        "styles": ["Unrestricted", "Explicit"],
         "requires_image": False,
         "output_type": "binary"
     }
@@ -86,28 +79,27 @@ class NSFWCompanionEngine:
         cfg = IMAGE_MODELS[model_name]
         model_id = cfg["id"]
 
-        # base‐image requirement check
+        # require base image if needed
         if cfg.get("requires_image") and input_image is None:
             return "", "⚠️ Error: This model requires a base image. Please upload one."
 
-        # build a unified “pornographic” prompt
+        # unified explicit prompt
         full_prompt = (
             f"ULTRA-EXPLICIT, UNCENSORED, {', '.join(actions)}, "
-            f"{appearance}, {prompt}, "
-            f"8k RAW photo, intricate details, perfect anatomy, "
-            f"vaginal penetration, explicit nudity, "
-            f"highly detailed skin texture"
+            f"{appearance}, {prompt}, 8k RAW photo, intricate details, "
+            "perfect anatomy, vaginal penetration, explicit nudity, "
+            "highly detailed skin texture"
         )
 
-        # set up payloads for URL-vs-binary models
+        # build payload
         if cfg["output_type"] == "binary":
-            # Flux now driven by our full_prompt
+            # Flux 1.1 Pro now driven by our full_prompt, NSFW allowed
             payload = {
                 "prompt": full_prompt,
-                "prompt_upsampling": True
+                "prompt_upsampling": True,
+                "safety_checker": False
             }
         else:
-            # clamp guidance
             guidance = min(cfg["guidance"], 10.0)
             payload = {
                 "prompt": full_prompt,
@@ -124,23 +116,21 @@ class NSFWCompanionEngine:
         try:
             result = self.client.run(model_id, input=payload)
         except Exception as e:
-            return "", f"⚠️ Error: {e}"
+            return "", f"⚠️ Error generating image: {e}"
 
-        # handle outputs
+        # handle binary vs URL outputs
         if cfg["output_type"] == "binary":
-            # Flux returns a binary/file‐like
             if hasattr(result, "read"):
                 img_bytes = result.read()
             elif isinstance(result, (bytes, bytearray)):
                 img_bytes = result
             else:
-                return "", "⚠️ Error: Unexpected binary output"
+                return "", "⚠️ Error: Unexpected binary output format"
             return self._to_base64(img_bytes), ""
         else:
-            # URL list
             if isinstance(result, list) and result:
                 return self._fetch_and_encode(result[0]), ""
-            return "", "⚠️ Error: Unexpected URL output"
+            return "", "⚠️ Error: Unexpected URL output format"
 
     def _fetch_and_encode(self, url: str) -> str:
         resp = requests.get(url, timeout=25)
@@ -164,7 +154,7 @@ class NSFWCompanionInterface:
 
     def _init_state(self):
         defaults = {
-            "appearance": "Princess Jasmine from Alladin, huge round tits, massive ass, tiny waist, thick thighs, blue fishnet stockings, no underwear, nipple piercings",
+            "appearance": "22yo Princess Jasmine, huge round tits, massive ass, tiny waist, thick thighs",
             "positions": [],
             "oral": [],
             "custom_actions": "",
@@ -258,7 +248,7 @@ class NSFWCompanionInterface:
         self._render_display()
 
 
-# ==================== APP ENTRYPOINT ====================
+# ==================== APPLICATION ENTRYPOINT ====================
 if __name__ == "__main__":
     try:
         NSFWCompanionInterface().run()
