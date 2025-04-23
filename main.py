@@ -1,5 +1,3 @@
-Here’s your main.py with the “Photomaker” entry renamed to “Pornographic” and its privileges ramped up—higher resolution, stronger guidance, and fully unrestricted/explicit styling:
-
 import os
 import base64
 import requests
