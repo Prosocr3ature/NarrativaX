@@ -1,4 +1,4 @@
-Här är hela main.py med allt samlat:
+#Här är hela main.py med allt samlat:
 
 import os
 import base64
