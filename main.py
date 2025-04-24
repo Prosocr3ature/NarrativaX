@@ -63,35 +63,43 @@ class NSFWCompanionEngine:
         cfg = IMAGE_MODELS[model_name]
         model_id = cfg["id"]
 
-        # Bygg prompten med explicita fält
+        # BYGG EXTREMT STRIKT INSTRUCTION‐BLOCK
         pos_str = ", ".join(positions) if positions else "none"
         oral_str = ", ".join(oral) if oral else "none"
         custom_str = custom.strip() if custom.strip() else "none"
 
+        instruction_block = (
+            "INSTRUCTION: Render EXACTLY the following scene:\n"
+            f"- POSITION(S): [{pos_str}] (e.g. '{pos_str} pose')\n"
+            f"- ORAL ACTION(S): [{oral_str}]\n"
+            f"- CUSTOM ACTION(S): [{custom_str}]\n"
+            "END INSTRUCTION."
+        )
+
+        # System‐prefix for maximum freedom
         system_prefix = "NSFW ALLOWED. FOLLOW USER INSTRUCTIONS EXACTLY. EXPLICIT CONTENT REQUIRED."
+
+        # SLÅ IHOP DEN KOMPLETTA PROMPTEN
         full_prompt = (
-            f"{system_prefix} "
-            f"POSITION: {pos_str}. "
-            f"ACTIONS: {oral_str}. "
-            f"CUSTOM: {custom_str}. "
+            f"{system_prefix} {instruction_block} "
             f"APPEARANCE: {appearance}. "
-            f"photorealistic, hyper-realistic lighting, studio lighting, "
-            "8K RAW, sharp focus, realistic skin texture, intricate details, "
-            "perfect anatomy, vaginal penetration, explicit nudity"
+            "Photorealistic, hyper-realistic lighting, sharp focus, studio lighting, "
+            "8K RAW, realistic skin texture, intricate details, perfect anatomy, "
+            "vaginal penetration, explicit nudity."
         )
 
+        # Utökad negativ prompt
         negative_prompt = (
-            "deformed, mutated, disfigured, bad anatomy, lowres, blurry, "
-            "cartoonish, extra limbs, watermark, text, oversaturated, unrealistic"
+            "deformed, mutated, disfigured, bad anatomy, lowres, blurry, cartoonish, "
+            "extra limbs, watermark, text, oversaturated, unrealistic"
         )
 
-        guidance = min(cfg["guidance"], 10.0)
         payload = {
             "prompt": full_prompt,
             "width": cfg["width"],
             "height": cfg["height"],
             "num_inference_steps": 80,
-            "guidance_scale": guidance,
+            "guidance_scale": min(cfg["guidance"], 10.0),
             "negative_prompt": negative_prompt,
             "safety_checker": False
         }
@@ -116,6 +124,7 @@ class NSFWCompanionEngine:
         buf = BytesIO()
         img.save(buf, format="WEBP", quality=100)
         return "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode()
+
 
 # ==================== ANVÄNDARGRÄNSSNITT ====================
 class NSFWCompanionInterface:
@@ -206,6 +215,7 @@ class NSFWCompanionInterface:
         self._action_controls()
         self._appearance_controls()
         self._render_display()
+
 
 # ==================== APPLIKATIONENS ENTRYPOINT ====================
 if __name__ == "__main__":
