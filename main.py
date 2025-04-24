@@ -29,33 +29,30 @@ IMAGE_MODELS: Dict[str, Dict] = {
     }
 }
 
-# Utökad lista av action‐knappar med detaljerade beskrivningar
 ACTION_BUTTONS = {
-    "Doggystyle":                "penetrating from behind in deep doggystyle, full thrusts",
-    "Missionary":                "lying on her back with legs spread wide in missionary",
-    "Cowgirl":                   "riding on top in cowgirl, bouncing up and down slowly",
-    "Reverse Cowgirl":           "sitting reversed on top, facing away",
-    "Spooning":                  "lying spooning from behind, slow gentle thrusts",
-    "Standing":                  "standing face to face with legs wrapped around",
-    "Kneeling BJ":               "kneeling and taking it deep into her throat",
-    "Deep Throat":               "taking the entire length into her throat aggressively",
-    "Face Fuck":                 "gripping her head and face fucking hard",
-    "Titfuck":                   "pressing the shaft between her breasts and moving up and down",
-    "Footjob":                   "stroking with her feet, ankles crossed around the shaft",
-    "Handjob":                   "stroking slowly with her hand, teasing the tip",
-    "Cum on Face":               "letting him cum on her face, eyes closed in ecstasy",
-    "Cum in Mouth":              "swallowing every drop as it spurts into her mouth",
-    "Cum on Tits":               "letting cum drip over her breasts and belly",
-    "Anal":                      "opening her ass cheeks for deep anal penetration",
-    "Double Penetration":        "penetrating her mouth and vagina simultaneously",
-    "Threesome":                 "two bodies pleasuring her from front and behind",
-    "Erotic Massage":            "massaging oil over her body, focusing on her curves",
-    "Facesitting":               "sitting on his face, grinding her hips",
-    "Bukkake":                   "multiple partners cumming on her face and chest",
-    "Gangbang":                  "a lineup of partners taking turns with her body",
+    "Doggystyle":        "penetrating from behind in deep doggystyle, full thrusts",
+    "Missionary":        "lying on her back with legs spread wide in missionary",
+    "Cowgirl":           "riding on top in cowgirl, bouncing up and down slowly",
+    "Reverse Cowgirl":   "sitting reversed on top, facing away",
+    "Spooning":          "lying spooning from behind, slow gentle thrusts",
+    "Standing":          "standing face to face with legs wrapped around",
+    "Kneeling BJ":       "kneeling and taking it deep into her throat",
+    "Deep Throat":       "taking the entire length into her throat aggressively",
+    "Face Fuck":         "gripping her head and face fucking hard",
+    "Titfuck":           "pressing the shaft between her breasts and moving up and down",
+    "Footjob":           "stroking with her feet, ankles crossed around the shaft",
+    "Handjob":           "stroking slowly with her hand, teasing the tip",
+    "Cum on Face":       "letting him cum on her face, eyes closed in ecstasy",
+    "Cum in Mouth":      "swallowing every drop as it spurts into her mouth",
+    "Cum on Tits":       "letting cum drip over her breasts and belly",
+    "Anal":              "opening her ass cheeks for deep anal penetration",
+    "Double Penetration":"penetrating her mouth and vagina simultaneously",
+    "Threesome":         "two bodies pleasuring her from front and behind",
+    "Erotic Massage":    "massaging oil over her body, focusing on her curves",
+    "Facesitting":       "sitting on his face, grinding her hips",
+    "Bukkake":           "multiple partners cumming on her face and chest",
+    "Gangbang":          "a lineup of partners taking turns with her body",
 }
-
-SEXUAL_ACTIONS = list(ACTION_BUTTONS.keys())
 
 # ==================== NSFW‐MOTOR ====================
 class NSFWCompanionEngine:
@@ -135,19 +132,30 @@ class NSFWCompanionInterface:
         </style>
         """, unsafe_allow_html=True)
 
+    def _append_action(self, desc: str):
+        # Callback for buttons: safely append before re-render
+        base = st.session_state.prompt.rstrip(". ")
+        st.session_state.prompt = f"{base}, {desc}."
+
     def _controls(self):
         with st.sidebar:
             st.selectbox("Model Version", list(IMAGE_MODELS.keys()), key="model")
-            st.text_area("Custom Action Prompt", key="prompt", height=150)
-
+            st.text_area(
+                "Custom Action Prompt",
+                key="prompt",
+                value=st.session_state.prompt,
+                height=150
+            )
             st.markdown("### Quick Actions")
-            for action in SEXUAL_ACTIONS:
-                if st.button(action):
-                    base = st.session_state.prompt.rstrip(". ")
-                    st.session_state.prompt = f"{base}, {ACTION_BUTTONS[action]}."
-
+            for action, desc in ACTION_BUTTONS.items():
+                st.button(
+                    action,
+                    key=f"act_{action}",
+                    on_click=self._append_action,
+                    args=(desc,)
+                )
             st.markdown("---")
-            if st.button("🎬 GENERATE IMAGE"):
+            if st.button("🎬 GENERATE IMAGE", key="generate"):
                 self._generate()
 
     def _generate(self):
