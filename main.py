@@ -8,15 +8,12 @@ import replicate
 from typing import Dict, List, Tuple, Union
 
 # ==================== KONSTANTER & KONFIGURATION ====================
-JASMINE_DESC = (
-    "Princess Jasmine from Aladdin with huge round breasts, "
-    "a massive ass, a tiny waist, thick thighs, wearing blue fishnet stockings, "
-    "no underwear, and nipple piercings"
-)
-
-DEFAULT_MODEL = (
-    "mikeei/dolphin-2.9-llama3-70b-gguf:"
-    "7cd1882cb3ea90756d09decf4bc8a259353354703f8f385ce588b71f7946f0aa"
+# Default‐beskrivning för karaktärens utseende och handlingar
+DEFAULT_PROMPT = (
+    "Princess Jasmine from Aladdin with huge round breasts, a massive ass, "
+    "a tiny waist, thick thighs, wearing blue fishnet stockings, no underwear, "
+    "and nipple piercings. "
+    "Describe in detail what you want her to do."
 )
 
 IMAGE_MODELS: Dict[str, Dict] = {
@@ -34,64 +31,35 @@ IMAGE_MODELS: Dict[str, Dict] = {
     }
 }
 
-SEXUAL_POSITIONS = [
-    "Doggystyle", "Missionary", "Cowgirl", "Standing", "Kneeling",
-    "Reverse Cowgirl", "Spooning", "Lotus", "Butterfly", "Anal"
-]
-
-ORAL_ACTIONS = [
-    "Blowjob", "Deep Throat", "Face Fucking", "Cum in Mouth",
-    "Cum on Face", "Tit Fuck", "Footjob", "Handjob"
-]
-
-# ==================== KÄRNFUNKTIONALITET ====================
+# ==================== NSFW‐MOTOR ====================
 class NSFWCompanionEngine:
     def __init__(self):
         token = os.getenv("REPLICATE_API_TOKEN")
         if not token:
-            raise EnvironmentError("REPLICATE_API_TOKEN inte satt")
+            raise EnvironmentError("REPLICATE_API_TOKEN är inte satt")
         self.client = replicate.Client(api_token=token)
 
     def generate_image(
         self,
         model_name: str,
-        appearance: str,
-        positions: List[str],
-        oral: List[str],
-        custom: str
+        prompt: str
     ) -> Tuple[str, str]:
         cfg = IMAGE_MODELS[model_name]
         model_id = cfg["id"]
 
-        # BYGG EXTREMT STRIKT INSTRUCTION‐BLOCK
-        pos_str = ", ".join(positions) if positions else "none"
-        oral_str = ", ".join(oral) if oral else "none"
-        custom_str = custom.strip() if custom.strip() else "none"
+        # System‐prefix för maximal frihet
+        system_prefix = "NSFW ALLOWED. FOLLOW USER PROMPT EXACTLY."
 
-        instruction_block = (
-            "INSTRUCTION: Render EXACTLY the following scene:\n"
-            f"- POSITION(S): [{pos_str}] (e.g. '{pos_str} pose')\n"
-            f"- ORAL ACTION(S): [{oral_str}]\n"
-            f"- CUSTOM ACTION(S): [{custom_str}]\n"
-            "END INSTRUCTION."
-        )
-
-        # System‐prefix for maximum freedom
-        system_prefix = "NSFW ALLOWED. FOLLOW USER INSTRUCTIONS EXACTLY. EXPLICIT CONTENT REQUIRED."
-
-        # SLÅ IHOP DEN KOMPLETTA PROMPTEN
         full_prompt = (
-            f"{system_prefix} {instruction_block} "
-            f"APPEARANCE: {appearance}. "
-            "Photorealistic, hyper-realistic lighting, sharp focus, studio lighting, "
-            "8K RAW, realistic skin texture, intricate details, perfect anatomy, "
-            "vaginal penetration, explicit nudity."
+            f"{system_prefix} {prompt}. "
+            "photorealistic, hyper-realistic lighting, studio lighting, "
+            "8K RAW, sharp focus, realistic skin texture, intricate details, "
+            "perfect anatomy, explicit nudity"
         )
 
-        # Utökad negativ prompt
         negative_prompt = (
-            "deformed, mutated, disfigured, bad anatomy, lowres, blurry, cartoonish, "
-            "extra limbs, watermark, text, oversaturated, unrealistic"
+            "deformed, mutated, disfigured, bad anatomy, lowres, blurry, "
+            "cartoonish, extra limbs, watermark, text, oversaturated, unrealistic"
         )
 
         payload = {
@@ -111,20 +79,16 @@ class NSFWCompanionEngine:
 
         if isinstance(result, list) and result:
             return self._fetch_and_encode(result[0]), ""
-        return "", "⚠️ Oväntat output-format"
+        return "", "⚠️ Oväntat format från modellen"
 
     def _fetch_and_encode(self, url: str) -> str:
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
-        return self._to_base64(resp.content)
-
-    def _to_base64(self, img_bytes: Union[bytes, bytearray]) -> str:
-        img = Image.open(BytesIO(img_bytes)).convert("RGB")
+        img = Image.open(BytesIO(resp.content)).convert("RGB")
         img = img.resize((1024, 1536), Image.Resampling.LANCZOS)
         buf = BytesIO()
         img.save(buf, format="WEBP", quality=100)
         return "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode()
-
 
 # ==================== ANVÄNDARGRÄNSSNITT ====================
 class NSFWCompanionInterface:
@@ -134,24 +98,16 @@ class NSFWCompanionInterface:
         self._configure_page()
 
     def _init_state(self):
-        defaults = {
-            "appearance": JASMINE_DESC,
-            "positions": [],
-            "oral": [],
-            "custom_actions": "",
-            "current_image": "",
-            "processing": False,
-            "model": "Unrestricted XL"
-        }
-        for k, v in defaults.items():
-            st.session_state.setdefault(k, v)
+        st.session_state.setdefault("model", "Unrestricted XL")
+        st.session_state.setdefault("prompt", DEFAULT_PROMPT)
+        st.session_state.setdefault("current_image", "")
+        st.session_state.setdefault("processing", False)
 
     def _configure_page(self):
         st.set_page_config(
             page_title="NSFW Companion Generator",
             page_icon="🔥",
-            layout="wide",
-            initial_sidebar_state="expanded"
+            layout="wide"
         )
         st.markdown("""
         <style>
@@ -162,34 +118,24 @@ class NSFWCompanionInterface:
         </style>
         """, unsafe_allow_html=True)
 
-    def _action_controls(self):
-        with st.sidebar.expander("💦 ACTION CONFIGURATOR", expanded=True):
-            st.multiselect("Sexual Positions", SEXUAL_POSITIONS, key="positions")
-            st.multiselect("Oral Actions", ORAL_ACTIONS, key="oral")
-            st.text_area("Custom Actions", key="custom_actions",
-                         help="Describe specific sexual acts in detail")
-            if st.button("🎬 GENERATE SCENE", type="primary"):
-                self._generate()
-
-    def _appearance_controls(self):
-        with st.sidebar.expander("👙 BODY CUSTOMIZER", expanded=True):
+    def _controls(self):
+        with st.sidebar:
             st.selectbox("Model Version", list(IMAGE_MODELS.keys()), key="model")
             st.text_area(
-                "Physical Description",
-                key="appearance",
-                height=200,
-                value=st.session_state.appearance
+                "Scene & Action Description",
+                key="prompt",
+                height=250
             )
+            if st.button("🎬 GENERATE IMAGE"):
+                self._generate()
 
     def _generate(self):
         st.session_state.processing = True
-        img_b64, err = self.engine.generate_image(
-            model_name=st.session_state.model,
-            appearance=st.session_state.appearance,
-            positions=st.session_state.positions,
-            oral=st.session_state.oral,
-            custom=st.session_state.custom_actions
-        )
+        with st.spinner("Generating image…"):
+            img_b64, err = self.engine.generate_image(
+                model_name=st.session_state.model,
+                prompt=st.session_state.prompt
+            )
         st.session_state.processing = False
 
         if err:
@@ -197,31 +143,16 @@ class NSFWCompanionInterface:
         else:
             st.session_state.current_image = img_b64
 
-    def _render_display(self):
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("## Live Preview")
-            if st.session_state.current_image:
-                st.image(st.session_state.current_image, use_container_width=True)
-            else:
-                st.info("Configure settings and generate content")
-        with col2:
-            with st.expander("📝 SCENE DESIGNER", expanded=True):
-                st.write("Combine positions & actions for complex scenes")
-                if st.button("💦 NEW VARIATION"):
-                    self._generate()
+    def _render(self):
+        st.markdown("## Live Preview")
+        if st.session_state.current_image:
+            st.image(st.session_state.current_image, use_container_width=True)
+        else:
+            st.info("Enter your prompt in the sidebar and hit Generate")
 
     def run(self):
-        self._action_controls()
-        self._appearance_controls()
-        self._render_display()
+        self._controls()
+        self._render()
 
-
-# ==================== APPLIKATIONENS ENTRYPOINT ====================
 if __name__ == "__main__":
-    try:
-        NSFWCompanionInterface().run()
-    except EnvironmentError as e:
-        st.error(str(e)); st.stop()
-    except Exception as e:
-        st.error(f"Fatal Error: {e}"); st.stop()
+    NSFWCompanionInterface().run()
