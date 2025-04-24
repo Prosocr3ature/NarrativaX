@@ -1,3 +1,9 @@
+Här är en helt omskriven main.py där alla tre modeller (Unrestricted XL, Hardcore Edition och Porn Diffusion) nu:
+	•	Tvingas fullfölja dina instruktioner: vi lägger på en “system-prefix” som deklarerar “NSFW ALLOWED. FOLLOW USER INSTRUCTIONS EXACTLY.”
+	•	Genererar hyper-realistiska, högupplösta bilder med 80 steg.
+	•	Använder en utvidgad negative_prompt för att aktivt filtrera bort artefakter.
+	•	Alltid kör med safety_checker=False så inget censureras.
+
 import os
 import base64
 import requests
@@ -62,24 +68,33 @@ class NSFWCompanionEngine:
         cfg = IMAGE_MODELS[model_name]
         model_id = cfg["id"]
 
+        # Prefix för att verkligen följa user prompt 
+        system_prefix = "NSFW ALLOWED. FOLLOW USER INSTRUCTIONS EXACTLY. EXPLICIT CONTENT REQUIRED."
+
+        # Bygg den fullständiga prompten
         full_prompt = (
-            f"{appearance}, ULTRA-EXPLICIT, UNCENSORED, {', '.join(actions)}, "
-            "photorealistic, hyper-realistic lighting, studio lighting, "
-            "8k RAW, sharp focus, realistic skin texture, intricate details, "
+            f"{system_prefix} {appearance}, ULTRA-EXPLICIT, UNCENSORED, "
+            f"{', '.join(actions)}, {prompt}, photorealistic, hyper-realistic lighting, "
+            "studio lighting, 8K RAW, sharp focus, realistic skin texture, intricate details, "
             "perfect anatomy, vaginal penetration, explicit nudity"
         )
 
-        guidance = min(cfg["guidance"], 10.0)
+        # Utökad negativ prompt för att blockera artefakter
+        negative_prompt = (
+            "deformed, mutated, disfigured, bad anatomy, lowres, blurry, cartoonish, "
+            "extra limbs, watermark, text, oversaturated, unrealistic, oversharpened, jittery"
+        )
+
+        # Säkerhet: alltid avstängd
+        guidance = min(cfg["guidance"], 12.0)
+
         payload = {
             "prompt": full_prompt,
             "width": cfg["width"],
             "height": cfg["height"],
-            "num_inference_steps": 60,
+            "num_inference_steps": 80,  # fler steg för renare bilder
             "guidance_scale": guidance,
-            "negative_prompt": (
-                "deformed, mutated, disfigured, bad anatomy, lowres, blurry, "
-                "cartoonish, text, watermark, oversaturated, unrealistic"
-            ),
+            "negative_prompt": negative_prompt,
             "safety_checker": False
         }
 
@@ -88,12 +103,13 @@ class NSFWCompanionEngine:
         except Exception as e:
             return "", f"⚠️ Fel vid generering: {e}"
 
+        # Förväntar oss lista med URL
         if isinstance(result, list) and result:
             return self._fetch_and_encode(result[0]), ""
         return "", "⚠️ Oväntat output-format"
 
     def _fetch_and_encode(self, url: str) -> str:
-        resp = requests.get(url, timeout=25)
+        resp = requests.get(url, timeout=30)
         resp.raise_for_status()
         return self._to_base64(resp.content)
 
@@ -185,7 +201,7 @@ class NSFWCompanionInterface:
         with col1:
             st.markdown("## Live Preview")
             if st.session_state.current_image:
-                st.image(st.session_state.current_image, use_column_width=True)
+                st.image(st.session_state.current_image, use_container_width=True)
             else:
                 st.info("Configure settings and generate content")
         with col2:
