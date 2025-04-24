@@ -1,9 +1,3 @@
-Här är en helt omskriven main.py där alla tre modeller (Unrestricted XL, Hardcore Edition och Porn Diffusion) nu:
-	•	Tvingas fullfölja dina instruktioner: vi lägger på en “system-prefix” som deklarerar “NSFW ALLOWED. FOLLOW USER INSTRUCTIONS EXACTLY.”
-	•	Genererar hyper-realistiska, högupplösta bilder med 80 steg.
-	•	Använder en utvidgad negative_prompt för att aktivt filtrera bort artefakter.
-	•	Alltid kör med safety_checker=False så inget censureras.
-
 import os
 import base64
 import requests
