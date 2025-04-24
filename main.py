@@ -54,39 +54,43 @@ class NSFWCompanionEngine:
 
     def generate_image(
         self,
-        prompt: str,
         model_name: str,
         appearance: str,
-        actions: List[str]
+        positions: List[str],
+        oral: List[str],
+        custom: str
     ) -> Tuple[str, str]:
         cfg = IMAGE_MODELS[model_name]
         model_id = cfg["id"]
 
-        # Prefix för att verkligen följa user prompt 
-        system_prefix = "NSFW ALLOWED. FOLLOW USER INSTRUCTIONS EXACTLY. EXPLICIT CONTENT REQUIRED."
+        # Bygg prompten med explicita fält
+        pos_str = ", ".join(positions) if positions else "none"
+        oral_str = ", ".join(oral) if oral else "none"
+        custom_str = custom.strip() if custom.strip() else "none"
 
-        # Bygg den fullständiga prompten
+        system_prefix = "NSFW ALLOWED. FOLLOW USER INSTRUCTIONS EXACTLY. EXPLICIT CONTENT REQUIRED."
         full_prompt = (
-            f"{system_prefix} {appearance}, ULTRA-EXPLICIT, UNCENSORED, "
-            f"{', '.join(actions)}, {prompt}, photorealistic, hyper-realistic lighting, "
-            "studio lighting, 8K RAW, sharp focus, realistic skin texture, intricate details, "
+            f"{system_prefix} "
+            f"POSITION: {pos_str}. "
+            f"ACTIONS: {oral_str}. "
+            f"CUSTOM: {custom_str}. "
+            f"APPEARANCE: {appearance}. "
+            f"photorealistic, hyper-realistic lighting, studio lighting, "
+            "8K RAW, sharp focus, realistic skin texture, intricate details, "
             "perfect anatomy, vaginal penetration, explicit nudity"
         )
 
-        # Utökad negativ prompt för att blockera artefakter
         negative_prompt = (
-            "deformed, mutated, disfigured, bad anatomy, lowres, blurry, cartoonish, "
-            "extra limbs, watermark, text, oversaturated, unrealistic, oversharpened, jittery"
+            "deformed, mutated, disfigured, bad anatomy, lowres, blurry, "
+            "cartoonish, extra limbs, watermark, text, oversaturated, unrealistic"
         )
 
-        # Säkerhet: alltid avstängd
-        guidance = min(cfg["guidance"], 12.0)
-
+        guidance = min(cfg["guidance"], 10.0)
         payload = {
             "prompt": full_prompt,
             "width": cfg["width"],
             "height": cfg["height"],
-            "num_inference_steps": 80,  # fler steg för renare bilder
+            "num_inference_steps": 80,
             "guidance_scale": guidance,
             "negative_prompt": negative_prompt,
             "safety_checker": False
@@ -97,7 +101,6 @@ class NSFWCompanionEngine:
         except Exception as e:
             return "", f"⚠️ Fel vid generering: {e}"
 
-        # Förväntar oss lista med URL
         if isinstance(result, list) and result:
             return self._fetch_and_encode(result[0]), ""
         return "", "⚠️ Oväntat output-format"
@@ -171,18 +174,13 @@ class NSFWCompanionInterface:
 
     def _generate(self):
         st.session_state.processing = True
-        actions = [
-            *st.session_state.positions,
-            *st.session_state.oral,
-            st.session_state.custom_actions
-        ]
-        with st.spinner("Generating content…"):
-            img_b64, err = self.engine.generate_image(
-                prompt=", ".join(actions),
-                model_name=st.session_state.model,
-                appearance=st.session_state.appearance,
-                actions=actions
-            )
+        img_b64, err = self.engine.generate_image(
+            model_name=st.session_state.model,
+            appearance=st.session_state.appearance,
+            positions=st.session_state.positions,
+            oral=st.session_state.oral,
+            custom=st.session_state.custom_actions
+        )
         st.session_state.processing = False
 
         if err:
