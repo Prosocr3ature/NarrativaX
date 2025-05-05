@@ -5,13 +5,18 @@ import streamlit as st
 from io import BytesIO
 from PIL import Image
 import replicate
-from typing import Dict, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 # ==================== KONSTANTER & KONFIGURATION ====================
-DEFAULT_PROMPT = (
-    "Princess Jasmine from Aladdin with huge round breasts, a massive ass, "
-    "a tiny waist, thick thighs, wearing blue fishnet stockings, no underwear, "
-    "and nipple piercings."
+JASMINE_DESC = (
+    "Princess Jasmine from Aladdin with huge round breasts, "
+    "a massive ass, a tiny waist, thick thighs, wearing blue fishnet stockings, "
+    "no underwear, and nipple piercings"
+)
+
+DEFAULT_MODEL = (
+    "mikeei/dolphin-2.9-llama3-70b-gguf:"
+    "7cd1882cb3ea90756d09decf4bc8a259353354703f8f385ce588b71f7946f0aa"
 )
 
 IMAGE_MODELS: Dict[str, Dict] = {
@@ -29,76 +34,71 @@ IMAGE_MODELS: Dict[str, Dict] = {
     }
 }
 
-ACTION_BUTTONS = {
-    "Doggystyle":        "penetrating from behind in deep doggystyle, full thrusts",
-    "Missionary":        "lying on her back with legs spread wide in missionary",
-    "Cowgirl":           "riding on top in cowgirl, bouncing up and down slowly",
-    "Reverse Cowgirl":   "sitting reversed on top, facing away",
-    "Spooning":          "lying spooning from behind, slow gentle thrusts",
-    "Standing":          "standing face to face with legs wrapped around",
-    "Kneeling BJ":       "kneeling and taking it deep into her throat",
-    "Deep Throat":       "taking the entire length into her throat aggressively",
-    "Face Fuck":         "gripping her head and face fucking hard",
-    "Titfuck":           "pressing the shaft between her breasts and moving up and down",
-    "Footjob":           "stroking with her feet, ankles crossed around the shaft",
-    "Handjob":           "stroking slowly with her hand, teasing the tip",
-    "Cum on Face":       "letting him cum on her face, eyes closed in ecstasy",
-    "Cum in Mouth":      "swallowing every drop as it spurts into her mouth",
-    "Cum on Tits":       "letting cum drip over her breasts and belly",
-    "Anal":              "opening her ass cheeks for deep anal penetration",
-    "Double Penetration":"penetrating her mouth and vagina simultaneously",
-    "Threesome":         "two bodies pleasuring her from front and behind",
-    "Erotic Massage":    "massaging oil over her body, focusing on her curves",
-    "Facesitting":       "sitting on his face, grinding her hips",
-    "Bukkake":           "multiple partners cumming on her face and chest",
-    "Gangbang":          "a lineup of partners taking turns with her body",
-}
+SEXUAL_POSITIONS = [
+    "Doggystyle", "Missionary", "Cowgirl", "Standing", "Kneeling",
+    "Reverse Cowgirl", "Spooning", "Lotus", "Butterfly", "Anal"
+]
 
-# ==================== NSFW‐MOTOR ====================
+ORAL_ACTIONS = [
+    "Blowjob", "Deep Throat", "Face Fucking", "Cum in Mouth",
+    "Cum on Face", "Tit Fuck", "Footjob", "Handjob"
+]
+
+# ==================== KÄRNFUNKTIONALITET ====================
 class NSFWCompanionEngine:
     def __init__(self):
         token = os.getenv("REPLICATE_API_TOKEN")
         if not token:
-            raise EnvironmentError("REPLICATE_API_TOKEN not set")
+            raise EnvironmentError("REPLICATE_API_TOKEN inte satt")
         self.client = replicate.Client(api_token=token)
 
-    def generate_image(self, model_name: str, prompt: str) -> Tuple[str, str]:
+    def generate_image(
+        self,
+        prompt: str,
+        model_name: str,
+        appearance: str,
+        actions: List[str]
+    ) -> Tuple[str, str]:
         cfg = IMAGE_MODELS[model_name]
-        system_prefix = "NSFW ALLOWED. FOLLOW USER PROMPT EXACTLY."
+        model_id = cfg["id"]
+
         full_prompt = (
-            f"{system_prefix} {prompt} "
+            f"{appearance}, ULTRA-EXPLICIT, UNCENSORED, {', '.join(actions)}, "
             "photorealistic, hyper-realistic lighting, studio lighting, "
-            "8K RAW, sharp focus, realistic skin texture, intricate details, "
-            "perfect anatomy, explicit nudity"
-        )
-        negative_prompt = (
-            "deformed, mutated, disfigured, bad anatomy, lowres, blurry, "
-            "cartoonish, extra limbs, watermark, text, oversaturated, unrealistic"
+            "8k RAW, sharp focus, realistic skin texture, intricate details, "
+            "perfect anatomy, vaginal penetration, explicit nudity"
         )
 
+        guidance = min(cfg["guidance"], 10.0)
         payload = {
             "prompt": full_prompt,
             "width": cfg["width"],
             "height": cfg["height"],
-            "num_inference_steps": 80,
-            "guidance_scale": min(cfg["guidance"], 10.0),
-            "negative_prompt": negative_prompt,
+            "num_inference_steps": 60,
+            "guidance_scale": guidance,
+            "negative_prompt": (
+                "deformed, mutated, disfigured, bad anatomy, lowres, blurry, "
+                "cartoonish, text, watermark, oversaturated, unrealistic"
+            ),
             "safety_checker": False
         }
 
         try:
-            result = self.client.run(cfg["id"], input=payload)
+            result = self.client.run(model_id, input=payload)
         except Exception as e:
-            return "", f"⚠️ Error generating image: {e}"
+            return "", f"⚠️ Fel vid generering: {e}"
 
         if isinstance(result, list) and result:
-            return self._to_base64_from_url(result[0]), ""
-        return "", "⚠️ Unexpected output format"
+            return self._fetch_and_encode(result[0]), ""
+        return "", "⚠️ Oväntat output-format"
 
-    def _to_base64_from_url(self, url: str) -> str:
-        resp = requests.get(url, timeout=30)
+    def _fetch_and_encode(self, url: str) -> str:
+        resp = requests.get(url, timeout=25)
         resp.raise_for_status()
-        img = Image.open(BytesIO(resp.content)).convert("RGB")
+        return self._to_base64(resp.content)
+
+    def _to_base64(self, img_bytes: Union[bytes, bytearray]) -> str:
+        img = Image.open(BytesIO(img_bytes)).convert("RGB")
         img = img.resize((1024, 1536), Image.Resampling.LANCZOS)
         buf = BytesIO()
         img.save(buf, format="WEBP", quality=100)
@@ -112,75 +112,98 @@ class NSFWCompanionInterface:
         self._configure_page()
 
     def _init_state(self):
-        st.session_state.setdefault("model", "Unrestricted XL")
-        st.session_state.setdefault("prompt", DEFAULT_PROMPT)
-        st.session_state.setdefault("current_image", "")
-        st.session_state.setdefault("processing", False)
+        defaults = {
+            "appearance": JASMINE_DESC,
+            "positions": [],
+            "oral": [],
+            "custom_actions": "",
+            "current_image": "",
+            "processing": False,
+            "model": "Unrestricted XL"
+        }
+        for k, v in defaults.items():
+            st.session_state.setdefault(k, v)
 
     def _configure_page(self):
         st.set_page_config(
             page_title="NSFW Companion Generator",
             page_icon="🔥",
-            layout="wide"
+            layout="wide",
+            initial_sidebar_state="expanded"
         )
         st.markdown("""
         <style>
           .main {background: #1a1a1a;}
           .sidebar .block-container {background: #2b2b2b;}
-          .stButton>button {margin:4px 0; width:100%;}
-          .stTextArea textarea {background:#333; color:#fff;}
+          .stButton>button {background: #ff4b4b!important;}
+          .stTextArea textarea {background: #333!important;}
         </style>
         """, unsafe_allow_html=True)
 
-    def _append_action(self, desc: str):
-        # Callback for buttons: safely append before re-render
-        base = st.session_state.prompt.rstrip(". ")
-        st.session_state.prompt = f"{base}, {desc}."
+    def _action_controls(self):
+        with st.sidebar.expander("💦 ACTION CONFIGURATOR", expanded=True):
+            st.multiselect("Sexual Positions", SEXUAL_POSITIONS, key="positions")
+            st.multiselect("Oral Actions", ORAL_ACTIONS, key="oral")
+            st.text_area("Custom Actions", key="custom_actions",
+                         help="Describe specific sexual acts in detail")
+            if st.button("🎬 GENERATE SCENE", type="primary"):
+                self._generate()
 
-    def _controls(self):
-        with st.sidebar:
+    def _appearance_controls(self):
+        with st.sidebar.expander("👙 BODY CUSTOMIZER", expanded=True):
             st.selectbox("Model Version", list(IMAGE_MODELS.keys()), key="model")
             st.text_area(
-                "Custom Action Prompt",
-                key="prompt",
-                value=st.session_state.prompt,
-                height=150
+                "Physical Description",
+                key="appearance",
+                height=200,
+                value=st.session_state.appearance
             )
-            st.markdown("### Quick Actions")
-            for action, desc in ACTION_BUTTONS.items():
-                st.button(
-                    action,
-                    key=f"act_{action}",
-                    on_click=self._append_action,
-                    args=(desc,)
-                )
-            st.markdown("---")
-            if st.button("🎬 GENERATE IMAGE", key="generate"):
-                self._generate()
 
     def _generate(self):
         st.session_state.processing = True
-        with st.spinner("Generating image…"):
+        actions = [
+            *st.session_state.positions,
+            *st.session_state.oral,
+            st.session_state.custom_actions
+        ]
+        with st.spinner("Generating content…"):
             img_b64, err = self.engine.generate_image(
+                prompt=", ".join(actions),
                 model_name=st.session_state.model,
-                prompt=st.session_state.prompt
+                appearance=st.session_state.appearance,
+                actions=actions
             )
         st.session_state.processing = False
+
         if err:
             st.error(err)
         else:
             st.session_state.current_image = img_b64
 
-    def _render(self):
-        st.markdown("## Live Preview")
-        if st.session_state.current_image:
-            st.image(st.session_state.current_image, use_container_width=True)
-        else:
-            st.info("Use the sidebar to choose actions and generate the scene.")
+    def _render_display(self):
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("## Live Preview")
+            if st.session_state.current_image:
+                st.image(st.session_state.current_image, use_column_width=True)
+            else:
+                st.info("Configure settings and generate content")
+        with col2:
+            with st.expander("📝 SCENE DESIGNER", expanded=True):
+                st.write("Combine positions & actions for complex scenes")
+                if st.button("💦 NEW VARIATION"):
+                    self._generate()
 
     def run(self):
-        self._controls()
-        self._render()
+        self._action_controls()
+        self._appearance_controls()
+        self._render_display()
 
+# ==================== APPLIKATIONENS ENTRYPOINT ====================
 if __name__ == "__main__":
-    NSFWCompanionInterface().run()
+    try:
+        NSFWCompanionInterface().run()
+    except EnvironmentError as e:
+        st.error(str(e)); st.stop()
+    except Exception as e:
+        st.error(f"Fatal Error: {e}"); st.stop()
